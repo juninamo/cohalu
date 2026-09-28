@@ -4,7 +4,16 @@
 \alias{rff_offset}
 \title{Offset for a residual random-feature model: expression explained by known structure}
 \usage{
-rff_offset(binned, covariates, genes = NULL, ridge = 1e-04)
+rff_offset(
+  binned,
+  covariates = NULL,
+  genes = NULL,
+  ridge = 1e-04,
+  method = c("covariates", "kmeans", "pca"),
+  k = 6,
+  seed = 1,
+  base = NULL
+)
 }
 \arguments{
 \item{binned}{A `binned_transcripts` object.}
@@ -17,6 +26,32 @@ section labels) are expanded to indicator columns. An intercept is added.}
 
 \item{ridge}{Small ridge penalty stabilising the per-gene fits (collinear
 or sparse covariates).}
+
+\item{method}{Where the covariates come from. `"covariates"` (default):
+`covariates` as given. When no labels are available: `"kmeans"` - the
+locally smoothed composition of `k` k-means clusters of the bins'
+log-normalised expression (top 10 principal components), a stand-in for
+cell-type composition; `"pca"` - the top `k` principal component scores
+of the bins' log-normalised expression. Given `covariates` are added to
+the data-driven ones. In simulations without labels (2 domains or 4
+cell-type territories, minor 4-gene program of amplitude 1, tested with
+`rff_program_test(null = "shift")`), `"kmeans"` with `k = 6` found the
+minor program in 11/12 and 12/12 tissues (true labels: 12/12; no offset:
+0/12), but only 8/12 and 1/12 at amplitude 0.5 (true labels: 10/12 and
+12/12). PCA offsets with `k >= 5` absorbed the program (0-2/12).}
+
+\item{k}{Number of clusters (`"kmeans"`) or components (`"pca"`).}
+
+\item{seed}{Random seed for k-means.}
+
+\item{base}{Optional numeric matrix (bins or in-tissue bins x genes,
+natural log scale, per unit area like the returned offset) of expected
+expression that is already known - e.g. from [rff_expected_offset()],
+the expected counts of each bin given the cell types that own its
+transcripts. It enters every gene's regression as a fixed offset, so the
+covariates only adjust it; with `covariates = NULL` (and
+`method = "covariates"`) only a gene intercept is fitted. The returned
+offset is `base` plus the fitted adjustment.}
 }
 \value{
 A numeric matrix (in-tissue bins x genes, natural log scale) for
@@ -30,6 +65,16 @@ PCA, Harmony or SCIGMA - with the bin area as offset, and returns the
 fitted log expectation per bin and gene (without the bin area). Passed as
 `offset` to [fit_spatial_rff()], the spatial factors then capture only the
 spatially coherent variation that the covariates do not explain.
+}
+\details{
+An offset estimated from the same data is not neutral: the richer
+  it is, the more of any program it absorbs, and structure it misses is
+  called by [rff_program_test()] like any other shared structure (in the
+  simulations, k-means offsets left 1-3 components of the known structure
+  to be called in tissues without a minor program). With data-driven
+  offsets, report the number of clusters or components, check that
+  conclusions hold for neighbouring values, and judge called components by
+  their genes and maps.
 }
 \examples{
 tx <- simulate_transcripts(size = 120, rate = 0.02, n_genes_per_set = 3)

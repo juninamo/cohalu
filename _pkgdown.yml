@@ -108,10 +108,16 @@ reference:
   - colocalization_modules
   - module_enrichment
   - module_enrichr
+  - rff_programs
   - fit_spatial_rff
   - rff_fields
   - rff_offset
   - rff_factor_test
+  - rff_program_test
+  - fit_spatial_rff_joint
+  - rff_program_test_joint
+  - rff_expected_offset
+  - rff_report
   - rff_pair_correlation
   - colocalization_per_sample
   - simulate_transcripts

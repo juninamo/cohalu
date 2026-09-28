@@ -626,6 +626,64 @@ pcf_matrix <- function(binned, gene_sets, r_max = 100, r_step = binned$grid$bin_
 #' @param max_iter Maximum L-BFGS-B iterations.
 #' @param seed Random seed for the random features and initialization.
 #' @param verbose Print optimizer progress.
+#' @param init Optional earlier fit to the same bins and genes, made with the
+#'   same `seed` and `n_features` (hence the same random features), whose
+#'   null-model parts (gene intercepts, dispersions, cellularity field) are
+#'   used as starting values; the factors keep their usual initialisation.
+#'   Not used by [rff_factor_test()]: in simulations, bootstrap refits
+#'   warm-started this way gave much smaller null statistics than the
+#'   cold-started observed fit (family-wise false positives 5 of 10 null
+#'   tissues instead of 1 of 20), so the refits start from scratch.
+#' @param weights Optional non-negative matrix (bins or in-tissue bins x
+#'   genes) of likelihood weights, e.g. 0 for entries held out for
+#'   cross-validation. In simulations, held-out-entry likelihood was not a
+#'   reliable guide for choosing `ard`: with a weak program it preferred
+#'   penalties that removed the program.
+#' @param factor_init How the factors are initialised: `"random"` (default;
+#'   small random loadings and weights) or `"residual_pca"`: from a PCA of
+#'   the Gaussian-smoothed Pearson residuals under the starting null model
+#'   (bin area, `offset`, gene intercepts), after removing the direction of a
+#'   cellularity effect shared by all genes. Each score map is projected onto
+#'   the random features. [rff_factor_test()] uses the same initialisation
+#'   for its refits.
+#' @param basis `"random"` (default): random Fourier features
+#'   (`n_features` frequencies). `"grid"`: the deterministic Fourier basis of
+#'   the (zero-padded) bin grid - each field is the RBF Gaussian process on a
+#'   torus, applied by FFT (circulant embedding), with one weight per padded
+#'   grid cell. The capacity then does not depend on `n_features` (ignored),
+#'   which matters for small-scale structure over large tissue; fields at
+#'   other points are interpolated bilinearly by [rff_fields()]. In
+#'   simulations with 10 um programs, the grid basis with fixed length scales
+#'   recovered the program map better (median |r| 0.74 vs 0.60).
+#' @param learn_lengthscales If `FALSE`, the factor length scales stay at
+#'   `lengthscales` (the cellularity length scale is still estimated). With
+#'   `basis = "grid"`, learned length scales tend to shrink to the bin size
+#'   (fitting noise), so fixed scales are recommended there.
+#' @param l1 L1 penalty on single loadings, \eqn{\sum_{jk} \lambda_j |L_{jk}|}
+#'   (smoothed at 0), in addition to the group penalty `ard`: a number or one
+#'   weight per gene (e.g. proportional to the square root of the gene's
+#'   counts). Encourages programs that involve few genes; in simulations it
+#'   did not improve the power of [rff_factor_test()].
+#' @param loadings Optional numeric matrix (genes x factors, log scale; rows
+#'   matched by gene name when named, missing genes get 0) of loadings that
+#'   are held fixed: only the fields (and the null-model parts) are
+#'   estimated, and `n_factors` is set to `ncol(loadings)`. Use it to map
+#'   gene programs found elsewhere (e.g. shared loadings from
+#'   [rff_program_test_joint()] or [fit_spatial_rff_joint()]) in a new
+#'   tissue. The fitted field of each program is rescaled to unit variance as
+#'   usual, so `fit$L` is `loadings` times the program's `amplitude` in this
+#'   tissue (the standard deviation of the fitted field, returned as
+#'   `amplitude`).
+#'
+#' @details The fields are evaluated on the bin grid through the
+#'   factorisation \eqn{\cos(\omega_x x + \omega_y y) = \cos\omega_x x
+#'   \cos\omega_y y - \sin\omega_x x \sin\omega_y y}, which turns the
+#'   \eqn{N \times M} trigonometric evaluations into small matrix products
+#'   (same result, several times faster; irregular coordinates fall back to
+#'   the direct evaluation). The optimiser usually stops at `max_iter`
+#'   rather than at convergence, so the loadings - and hence
+#'   `factor_strength` - depend on `max_iter`; compare fits (and bootstrap
+#'   refits) only at the same `max_iter`.
 #'
 #' @return An object of class `spatial_rff_fit` with the estimates
 #'   (`alpha`, `L`, `sigma0`, `lengthscales`, `density_lengthscale`, `gamma`,
@@ -633,7 +691,9 @@ pcf_matrix <- function(binned, gene_sets, r_max = 100, r_step = binned$grid$bin_
 #'   `program_strength` (norm after removing the loading shared by all genes,
 #'   which cannot be told apart from cellularity), the
 #'   random frequencies, the genes, the settings (`settings`, used by
-#'   [rff_factor_test()]) and convergence information.
+#'   [rff_factor_test()]) and convergence information; with fixed
+#'   `loadings`, also `amplitude` (standard deviation of each program's
+#'   fitted field; `NULL` otherwise).
 #' @references Gundersen GW, Zhang MM, Engelhardt BE (2021). Latent variable
 #'   modeling with random features. AISTATS, PMLR 130.
 #' @export
@@ -653,8 +713,17 @@ fit_spatial_rff <- function(binned, n_factors = 3,
                             family = c("nb", "poisson"),
                             max_iter = 500,
                             seed = 1,
-                            verbose = FALSE) {
+                            verbose = FALSE,
+                            init = NULL,
+                            weights = NULL,
+                            factor_init = c("random", "residual_pca"),
+                            basis = c("random", "grid"),
+                            learn_lengthscales = TRUE,
+                            l1 = 0,
+                            loadings = NULL) {
   family <- match.arg(family)
+  factor_init <- match.arg(factor_init)
+  basis <- match.arg(basis)
   if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
   keep <- binned$coords$in_tissue
   O_mat <- NULL
@@ -670,6 +739,17 @@ fit_spatial_rff <- function(binned, n_factors = 3,
     if (any(!is.finite(O_mat))) stop("A matrix `offset` must be finite.")
     offset <- "matrix"
   } else offset <- match.arg(offset)
+  L_fix <- NULL
+  if (!is.null(loadings)) {
+    L_fix <- as.matrix(loadings)
+    if (!is.numeric(L_fix) || any(!is.finite(L_fix))) stop("`loadings` must be a finite numeric matrix (genes x factors).")
+    if (!is.null(rownames(L_fix))) {
+      miss <- setdiff(binned$genes, rownames(L_fix))
+      if (length(miss) == length(binned$genes)) stop("No gene of `binned` is a row name of `loadings`.")
+      L_fix <- rbind(L_fix, matrix(0, length(miss), ncol(L_fix), dimnames = list(miss, NULL)))[binned$genes, , drop = FALSE]
+    } else if (nrow(L_fix) != length(binned$genes)) stop("`loadings` needs one row per gene (or gene row names).")
+    n_factors <- ncol(L_fix)
+  }
   .local_seed(seed)
   if (offset == "smoothed_total") density_lengthscale <- NULL
   Y <- as.matrix(binned$counts[keep, , drop = FALSE])
@@ -703,10 +783,25 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   hi <- log(max(diff(range(U[, 1])), diff(range(U[, 2])), 2 * binned$grid$bin_size))
 
   n_fields <- K + has_d
+  ell_all <- c(if (has_d) density_lengthscale, ell_init)
+  if (basis == "grid") {
+    # Deterministic Fourier basis of the (zero-padded) bin grid: each field is
+    # f = C z with z ~ N(0, I) and C the symmetric square root of the RBF
+    # covariance on a torus, applied by FFT (circulant embedding). All grid
+    # frequencies are used, so the capacity is not limited by n_features.
+    g <- binned$grid
+    padn <- function(n) stats::nextn(n + min(n, ceiling(2 * max(ell_all) / g$bin_size) + 2))
+    px <- padn(g$nx); py <- padn(g$ny); P <- px * py
+    fq <- function(p) { k <- 0:(p - 1); ifelse(k < p / 2, k, k - p) * 2 * pi / (p * g$bin_size) }
+    k2 <- outer(fq(px)^2, fq(py)^2, "+")
+    pidx <- (which(keep) - 1L) %% g$nx + 1L + ((which(keep) - 1L) %/% g$nx) * px
+    Omega <- NULL
+  }
+  D <- if (basis == "grid") P else 2 * M       # weights per field
   idx <- list()
   pos <- 0
   add <- function(name, n) { idx[[name]] <<- pos + seq_len(n); pos <<- pos + n }
-  add("alpha", J); add("L", J * K); add("gamma", n_fields * 2 * M); add("log_ell", n_fields)
+  add("alpha", J); add("L", J * K); add("gamma", n_fields * D); add("log_ell", n_fields)
   if (has_d) add("log_sigma0", 1)
   if (family == "nb") add("log_r", J)
 
@@ -714,50 +809,148 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   theta0[idx$alpha] <- if (is.null(O_mat)) log(colSums(Y) + 0.5) - log(sum(exp(rep_len(log_area, N)))) else
     log(colSums(Y) + 0.5) - log(colSums(exp(log_area + O_mat)))
   theta0[idx$L] <- stats::rnorm(J * K, sd = 0.1)
-  theta0[idx$gamma] <- stats::rnorm(n_fields * 2 * M, sd = 0.1)
-  ell_all <- c(if (has_d) density_lengthscale, ell_init)
+  theta0[idx$gamma] <- stats::rnorm(n_fields * D, sd = 0.1)
   theta0[idx$log_ell] <- log(ell_all)
   if (has_d) theta0[idx$log_sigma0] <- log(0.3)
   if (family == "nb") theta0[idx$log_r] <- log(10)
+  if (!is.null(init)) {
+    # warm start of the null-model parts (intercepts, dispersions, cellularity
+    # field); the factors keep their random initialisation
+    if (!inherits(init, "spatial_rff_fit")) stop("`init` must be a spatial_rff_fit.")
+    same_basis <- if (basis == "grid") identical(init$basis, "grid") && nrow(init$gamma) == D else
+      !is.null(init$Omega) && nrow(init$Omega) == M && isTRUE(all.equal(init$Omega, Omega))
+    if (!identical(init$genes, colnames(Y)) || !same_basis)
+      stop("`init` must be a fit to the same genes with the same `basis`, `n_features` and `seed`.")
+    theta0[idx$alpha] <- init$alpha
+    if (family == "nb" && !is.null(init$dispersion)) theta0[idx$log_r] <- log(pmin(pmax(init$dispersion, 1.01e-2), 0.99e4))
+    if (has_d && isTRUE(init$has_density)) {
+      theta0[idx$gamma][seq_len(D)] <- init$gamma[, 1]
+      theta0[idx$log_ell][1] <- min(max(log(init$density_lengthscale), lo), hi)
+      theta0[idx$log_sigma0] <- log(max(init$sigma0, 1e-3))
+    }
+  }
   prior_ell_mean <- log(ell_all)
   lower <- rep(-Inf, pos); upper <- rep(Inf, pos)
   lower[idx$log_ell] <- lo; upper[idx$log_ell] <- hi
+  if (!learn_lengthscales) {                    # factor length scales held fixed
+    fl <- idx$log_ell[has_d + seq_len(K)]
+    theta0[fl] <- pmin(pmax(theta0[fl], lo), hi); lower[fl] <- theta0[fl]; upper[fl] <- theta0[fl]
+  }
   if (family == "nb") { lower[idx$log_r] <- log(1e-2); upper[idx$log_r] <- log(1e4) }
+  if (!is.null(L_fix)) {                        # loadings held fixed: only the fields are estimated
+    theta0[idx$L] <- as.vector(L_fix); lower[idx$L] <- theta0[idx$L]; upper[idx$L] <- theta0[idx$L]
+  }
 
   unpack <- function(th) {
     list(alpha = th[idx$alpha],
          L = matrix(th[idx$L], J, K),
-         gamma = matrix(th[idx$gamma], 2 * M, n_fields),
+         gamma = matrix(th[idx$gamma], D, n_fields),
          ell = exp(th[idx$log_ell]),
          sigma0 = if (has_d) exp(th[idx$log_sigma0]) else 0,
          r = if (family == "nb") exp(th[idx$log_r]) else NULL)
   }
-  y_nz <- Y > 0
-  lfy <- sum(lgamma(Y + 1))
+  Wt <- NULL
+  if (!is.null(weights)) {
+    Wt <- as.matrix(weights)
+    if (nrow(Wt) == nrow(binned$coords)) Wt <- Wt[keep, , drop = FALSE]
+    if (!identical(dim(Wt), dim(Y)) || any(!is.finite(Wt)) || any(Wt < 0))
+      stop("`weights` must be a non-negative matrix with one row per (in-tissue) bin and one column per gene.")
+  }
+  lfy <- if (is.null(Wt)) sum(lgamma(Y + 1)) else sum(Wt * lgamma(Y + 1))
+  # L1 penalty on single loadings: a scalar, or one weight per gene
+  if (!is.numeric(l1) || !(length(l1) %in% c(1, J)) || any(!is.finite(l1)) || any(l1 < 0))
+    stop("`l1` must be a non-negative number or one per gene.")
+  l1v <- rep(if (length(l1) == J && !is.null(names(l1))) l1[colnames(Y)] else l1, length.out = J)
+  l1v <- rep(l1v, times = K)                   # matches the column-major L vector
+  # Bins lie on a regular grid, so cos/sin(w_x x + w_y y) factorise into
+  # functions of x and of y: the fields, their length-scale derivatives and
+  # the gradients for the weights are then small matrix products over the
+  # nx x ny grid instead of N x M trigonometric evaluations (exact, and much
+  # faster). Falls back to the direct evaluation for irregular coordinates.
+  ux <- sort(unique(U[, 1])); uy <- sort(unique(U[, 2]))
+  use_grid <- basis == "random" && isTRUE(getOption("cohalu.rff_grid", TRUE)) &&
+    as.numeric(length(ux)) * length(uy) <= 4 * N
+  if (use_grid) {
+    nxg <- length(ux); nyg <- length(uy)
+    gidx <- match(U[, 1], ux) + (match(U[, 2], uy) - 1L) * nxg
+    Wx <- outer(ux, Omega[, 1]); Wy <- outer(uy, Omega[, 2])
+  }
+  trig <- vector("list", n_fields)
+  # forward: field values at the bins (trigonometric blocks kept for the gradient)
+  field_fwd <- function(k, ell, gk, full = FALSE) {
+    if (basis == "grid") {
+      S <- exp(-0.5 * ell^2 * k2); S <- S / sum(S)
+      w <- sqrt(S)
+      Zf <- stats::fft(matrix(gk, px, py))
+      trig[[k]] <<- list(Zf = Zf, w = w, a = -0.5 * ell^2 * k2 + 0.5 * sum(S * ell^2 * k2))
+      fp <- Re(stats::fft(Zf * w, inverse = TRUE)) / sqrt(P)
+      return(if (full) fp[seq_len(g$nx), seq_len(g$ny)] else fp[pidx])
+    }
+    gc <- gk[seq_len(M)]; gs <- gk[M + seq_len(M)]
+    if (!use_grid) {
+      A <- Z / ell
+      cA <- cos(A); sA <- sin(A)
+      trig[[k]] <<- list(A = A, cA = cA, sA = sA, gc = gc, gs = gs)
+      return(s * (cA %*% gc + sA %*% gs))
+    }
+    Ax <- Wx / ell; Ay <- Wy / ell
+    Cx <- cos(Ax); Sx <- sin(Ax); Cy <- cos(Ay); Sy <- sin(Ay)
+    trig[[k]] <<- list(Ax = Ax, Ay = Ay, Cx = Cx, Sx = Sx, Cy = Cy, Sy = Sy, gc = gc, gs = gs)
+    gcy <- rep(gc, each = nyg); gsy <- rep(gs, each = nyg)
+    Fg <- tcrossprod(Cx, Cy * gcy + Sy * gsy) + tcrossprod(Sx, Cy * gsy - Sy * gcy)
+    s * Fg[gidx]
+  }
+  # backward: given G_b = d nll / d f(u_b), the gradient for the weights
+  # (2M) and for log(ell) (sum_b G_b * ell * df/dell)
+  field_grad <- function(k, Gk) {
+    tr <- trig[[k]]
+    if (basis == "grid") {
+      Gp <- matrix(0, px, py); Gp[pidx] <- Gk
+      gz <- Re(stats::fft(stats::fft(Gp) * tr$w, inverse = TRUE)) / sqrt(P)
+      dF <- Re(stats::fft(tr$Zf * tr$w * tr$a, inverse = TRUE))[pidx] / sqrt(P)
+      return(list(gamma = as.vector(gz), ell = sum(Gk * dF)))
+    }
+    if (!use_grid) {
+      A <- tr$A
+      return(list(gamma = s * c(crossprod(tr$cA, Gk), crossprod(tr$sA, Gk)),
+                  ell = s * sum(Gk * ((tr$sA * A) %*% tr$gc - (tr$cA * A) %*% tr$gs))))
+    }
+    Gg <- matrix(0, nxg, nyg); Gg[gidx] <- Gk
+    GC <- Gg %*% tr$Cy; GS <- Gg %*% tr$Sy
+    GCA <- Gg %*% (tr$Cy * tr$Ay); GSA <- Gg %*% (tr$Sy * tr$Ay)
+    Cx <- tr$Cx; Sx <- tr$Sx; Ax <- tr$Ax
+    gcx <- rep(tr$gc, each = nxg); gsx <- rep(tr$gs, each = nxg)
+    # ell * df/dell = sum_m [sin(A) A gc_m - cos(A) A gs_m], A = Ax + Ay, expanded
+    # with cos/sin(Ax + Ay) into x- and y-parts
+    dl <- sum(Sx * Ax * (GC * gcx + GS * gsx) + Sx * (GCA * gcx + GSA * gsx) -
+                Cx * Ax * (GC * gsx - GS * gcx) + Cx * (GSA * gcx - GCA * gsx))
+    list(gamma = s * c(colSums(Cx * GC) - colSums(Sx * GS), colSums(Sx * GC) + colSums(Cx * GS)),
+         ell = s * dl)
+  }
 
   objgrad <- function(th) {
     p <- unpack(th)
     Fm <- matrix(0, N, n_fields)
-    dF <- matrix(0, N, n_fields)   # ell * d f / d ell
-    for (k in seq_len(n_fields)) {
-      A <- Z / p$ell[k]
-      cA <- cos(A); sA <- sin(A)
-      gc <- p$gamma[seq_len(M), k]; gs <- p$gamma[M + seq_len(M), k]
-      Fm[, k] <- s * (cA %*% gc + sA %*% gs)
-      dF[, k] <- s * ((sA * A) %*% gc - (cA * A) %*% gs)
-    }
+    for (k in seq_len(n_fields))
+      Fm[, k] <- field_fwd(k, p$ell[k], p$gamma[, k])
     Lfull <- if (has_d) cbind(p$sigma0, p$L) else p$L
     eta <- log_area + O_eta + matrix(p$alpha, N, J, byrow = TRUE) + Fm %*% t(Lfull)
+    eta <- pmin(eta, 40)                   # guards against overflow in wild line-search steps
     mu <- exp(eta)
     if (family == "poisson") {
-      nll <- sum(mu) - sum(Y * eta) + lfy
+      ll_el <- mu - Y * eta
       R <- mu - Y
+      if (!is.null(Wt)) { ll_el <- Wt * ll_el; R <- Wt * R }
+      nll <- sum(ll_el) + lfy
     } else {
       rr <- matrix(p$r, N, J, byrow = TRUE)
       lr <- log(rr + mu)
-      nll <- -sum(lgamma(Y + rr) - lgamma(rr) + rr * (log(rr) - lr) + Y * (eta - lr)) + lfy
+      ll_el <- lgamma(Y + rr) - lgamma(rr) + rr * (log(rr) - lr) + Y * (eta - lr)
       R <- (mu - Y) * rr / (rr + mu)
-      g_logr <- -p$r * colSums(digamma(Y + rr) - digamma(rr) + log(rr) - lr + 1 - (rr + Y) / (rr + mu))
+      dr <- digamma(Y + rr) - digamma(rr) + log(rr) - lr + 1 - (rr + Y) / (rr + mu)
+      if (!is.null(Wt)) { ll_el <- Wt * ll_el; R <- Wt * R; dr <- Wt * dr }
+      nll <- -sum(ll_el) + lfy
+      g_logr <- -p$r * colSums(dr)
     }
     G <- R %*% Lfull                       # N x n_fields
     grad <- numeric(pos)
@@ -769,13 +962,11 @@ fit_spatial_rff <- function(binned, n_factors = 3,
       Lm <- matrix(th[idx$L], J, K); nrm <- sqrt(colSums(Lm^2) + 1e-6)
       grad[idx$L] <- grad[idx$L] + ard * as.vector(sweep(Lm, 2, nrm, "/"))
     }
-    gg <- matrix(0, 2 * M, n_fields)
-    for (k in seq_len(n_fields)) {
-      A <- Z / p$ell[k]
-      gg[, k] <- s * c(crossprod(cos(A), G[, k]), crossprod(sin(A), G[, k]))
-    }
+    if (any(l1v > 0)) grad[idx$L] <- grad[idx$L] + l1v * th[idx$L] / sqrt(th[idx$L]^2 + 1e-6)
+    gg <- matrix(0, D, n_fields); gl <- numeric(n_fields)
+    for (k in seq_len(n_fields)) { bk <- field_grad(k, G[, k]); gg[, k] <- bk$gamma; gl[k] <- bk$ell }
     grad[idx$gamma] <- as.vector(gg) + th[idx$gamma]
-    grad[idx$log_ell] <- colSums(G * dF) + (th[idx$log_ell] - prior_ell_mean)
+    grad[idx$log_ell] <- gl + (th[idx$log_ell] - prior_ell_mean)
     if (has_d) {
       grad[idx$log_sigma0] <- p$sigma0 * sum(RtF[, 1]) + th[idx$log_sigma0] / 4
     }
@@ -784,10 +975,50 @@ fit_spatial_rff <- function(binned, n_factors = 3,
       0.5 * sum((th[idx$log_ell] - prior_ell_mean)^2) +
       (if (has_d) th[idx$log_sigma0]^2 / 8 else 0) +
       (if (family == "nb") sum((th[idx$log_r] - log(10))^2) / 18 else 0) +
-      (if (ard > 0) ard * sum(sqrt(colSums(matrix(th[idx$L], J, K)^2) + 1e-6)) else 0)
+      (if (ard > 0) ard * sum(sqrt(colSums(matrix(th[idx$L], J, K)^2) + 1e-6)) else 0) +
+      (if (any(l1v > 0)) sum(l1v * sqrt(th[idx$L]^2 + 1e-6)) else 0)
     list(value = nll + prior, grad = grad)
   }
 
+  if (factor_init == "residual_pca") {
+    # Start the factors from a PCA of the Gaussian-smoothed Pearson residuals
+    # under the starting null model (area + offset + intercepts); the
+    # direction of a shared cellularity effect (proportional to sqrt(mu)) is
+    # removed first when a cellularity field is fitted. Each score map is
+    # projected onto the random features (kernel smoothing, rescaled to unit
+    # variance) and the loadings start along the gene directions.
+    mu_s <- exp(log_area + O_eta + matrix(theta0[idx$alpha], N, J, byrow = TRUE))
+    Rp <- (Y - mu_s) / sqrt(mu_s)
+    g <- binned$grid; h <- min(ell_init) / 2 / g$bin_size
+    msk <- matrix(as.numeric(keep), g$nx, g$ny); msm <- pmax(.smooth_grid(msk, h), 1e-8)
+    sm_cols <- function(X) apply(X, 2, function(v) { full <- numeric(length(keep)); full[keep] <- v
+      as.vector(.smooth_grid(matrix(full, g$nx, g$ny), h) / msm)[keep] })
+    Rp <- sm_cols(Rp)
+    Wd <- sqrt(sm_cols(mu_s))
+    if (has_d) Rp <- Rp - Wd * (rowSums(Rp * Wd) / rowSums(Wd * Wd))
+    if (is.null(L_fix)) {
+      sv <- svd(Rp, nu = min(K, J), nv = min(K, J))
+    } else {                                     # fixed loadings: start from the projections on them
+      Vp <- L_fix * sqrt(colMeans(mu_s))           # log scale -> Pearson scale
+      sv <- list(u = Rp %*% Vp, v = L_fix)
+    }
+    Lm <- matrix(theta0[idx$L], J, K); gm <- matrix(theta0[idx$gamma], D, n_fields)
+    for (k in seq_len(min(K, J))) {
+      kk <- k + has_d
+      z <- sv$u[, k] - mean(sv$u[, k])
+      if (!is.null(L_fix)) z <- z / max(stats::sd(z), 1e-12) / sqrt(N)
+      invisible(field_fwd(kk, ell_init[k], numeric(D)))
+      gk <- field_grad(kk, z)$gamma
+      fk <- field_fwd(kk, ell_init[k], gk)
+      if (stats::sd(fk) > 0) gm[, kk] <- gk / stats::sd(fk)
+      lk <- sv$v[, k] / sqrt(colMeans(mu_s))    # Pearson scale -> log scale
+      Lm[, k] <- 0.3 * lk / sqrt(sum(lk^2))
+    }
+    if (is.null(L_fix)) theta0[idx$L] <- as.vector(Lm)
+    theta0[idx$gamma] <- as.vector(gm)
+  }
+
+  if (isTRUE(getOption("cohalu.rff_debug"))) assign(".rff_dbg", list(objgrad = objgrad, theta0 = theta0, idx = idx), envir = globalenv()) # internal hook for gradient tests
   cache <- new.env()
   fn <- function(th) { cache$res <- objgrad(th); cache$th <- th; cache$res$value }
   gr <- function(th) {
@@ -802,6 +1033,7 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   # and move the scale into the loadings (cf. the rescaling step of
   # Gundersen et al. 2021), so that L describes log-intensity covariance.
   field_sd <- vapply(seq_len(n_fields), function(k) {
+    if (basis == "grid") return(stats::sd(field_fwd(k, p$ell[k], p$gamma[, k])))
     A <- Z / p$ell[k]
     stats::sd(s * (cos(A) %*% p$gamma[seq_len(M), k] + sin(A) %*% p$gamma[M + seq_len(M), k]))
   }, numeric(1))
@@ -812,9 +1044,9 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   # fitted (unit-variance) fields on the full grid, for plug-in covariances
   U_all <- sweep(as.matrix(binned$coords[, c("x", "y")]), 2,
                  colMeans(as.matrix(binned$coords[keep, c("x", "y")])))
-  Z_all <- U_all %*% t(Omega)
   field_grid <- vapply(seq_len(n_fields), function(k) {
-    A <- Z_all / p$ell[k]
+    if (basis == "grid") return(as.vector(field_fwd(k, p$ell[k], p$gamma[, k], full = TRUE)))
+    A <- U_all %*% t(Omega) / p$ell[k]
     as.vector(s * (cos(A) %*% p$gamma[seq_len(M), k] + sin(A) %*% p$gamma[M + seq_len(M), k]))
   }, numeric(nrow(U_all)))
   field_grid <- matrix(field_grid, ncol = n_fields)
@@ -838,11 +1070,14 @@ fit_spatial_rff <- function(binned, n_factors = 3,
     offset_grid = offset_grid, offset_matrix = offset_matrix,
     factor_strength = stats::setNames(sqrt(colSums(p$L^2)), colnames(p$L)),
     program_strength = stats::setNames(sqrt(colSums(sweep(p$L, 2, colMeans(p$L))^2)), colnames(p$L)),
+    amplitude = if (is.null(L_fix)) NULL else stats::setNames(fac_sd, colnames(p$L)),
     settings = list(n_factors = n_factors, lengthscales = lengthscales, density_lengthscale = density_lengthscale,
-                    ard = ard, n_features = n_features, family = family, max_iter = max_iter, seed = seed),
+                    ard = ard, n_features = n_features, family = family, max_iter = max_iter, seed = seed,
+                    factor_init = factor_init, basis = basis, learn_lengthscales = learn_lengthscales, l1 = l1,
+                    loadings = L_fix),
     bin_size = binned$grid$bin_size, has_density = has_d,
     objective = opt$value, convergence = opt$convergence, message = opt$message,
-    iterations = opt$counts, offset = offset
+    iterations = opt$counts, offset = offset, basis = basis
   ), class = "spatial_rff_fit")
 }
 
@@ -930,13 +1165,27 @@ rff_fields <- function(fit, coords, x_col = "x", y_col = "y", by = NULL,
     ok[ok] <- near[cbind(ix[ok] + 1, iy[ok] + 1)]
     if (any(!ok)) warning(sum(!ok), " of ", length(ok), " points lie outside the fitted tissue; their fields are extrapolated.")
   }
-  M <- nrow(fit$Omega); s <- 1 / sqrt(M)
-  Z <- sweep(xy, 2, center) %*% t(fit$Omega)
   ell <- c(if (fit$has_density) fit$density_lengthscale, fit$lengthscales)
-  Fm <- vapply(seq_along(ell), function(k) {
-    A <- Z / ell[k]
-    as.vector(s * (cos(A) %*% fit$gamma[seq_len(M), k] + sin(A) %*% fit$gamma[M + seq_len(M), k]))
-  }, numeric(nrow(xy)))
+  if (identical(fit$basis, "grid")) {
+    # grid basis: bilinear interpolation of the fitted fields between bin centres
+    fx <- pmin(pmax((xy[, 1] - g$xmin) / g$bin_size - 0.5, 0), g$nx - 1)
+    fy <- pmin(pmax((xy[, 2] - g$ymin) / g$bin_size - 0.5, 0), g$ny - 1)
+    x0 <- pmin(floor(fx), g$nx - 2L); y0 <- pmin(floor(fy), g$ny - 2L)
+    x0 <- pmax(x0, 0); y0 <- pmax(y0, 0)
+    tx <- fx - x0; ty <- fy - y0
+    at <- function(ix, iy) ix + 1 + iy * g$nx
+    x1 <- pmin(x0 + 1, g$nx - 1); y1 <- pmin(y0 + 1, g$ny - 1)
+    Fm <- apply(fit$field_grid, 2, function(v)
+      (1 - tx) * (1 - ty) * v[at(x0, y0)] + tx * (1 - ty) * v[at(x1, y0)] +
+        (1 - tx) * ty * v[at(x0, y1)] + tx * ty * v[at(x1, y1)])
+  } else {
+    M <- nrow(fit$Omega); s <- 1 / sqrt(M)
+    Z <- sweep(xy, 2, center) %*% t(fit$Omega)
+    Fm <- vapply(seq_along(ell), function(k) {
+      A <- Z / ell[k]
+      as.vector(s * (cos(A) %*% fit$gamma[seq_len(M), k] + sin(A) %*% fit$gamma[M + seq_len(M), k]))
+    }, numeric(nrow(xy)))
+  }
   Fm <- matrix(Fm, ncol = length(ell))
   colnames(Fm) <- c(if (fit$has_density) "density", paste0("factor", seq_along(fit$lengthscales)))
   keep <- switch(which, all = colnames(Fm), factors = grep("^factor", colnames(Fm), value = TRUE), density = "density")
@@ -970,6 +1219,36 @@ rff_fields <- function(fit, coords, x_col = "x", y_col = "y", by = NULL,
 #' @param genes Genes to model (default: all genes of `binned`).
 #' @param ridge Small ridge penalty stabilising the per-gene fits (collinear
 #'   or sparse covariates).
+#' @param method Where the covariates come from. `"covariates"` (default):
+#'   `covariates` as given. When no labels are available: `"kmeans"` - the
+#'   locally smoothed composition of `k` k-means clusters of the bins'
+#'   log-normalised expression (top 10 principal components), a stand-in for
+#'   cell-type composition; `"pca"` - the top `k` principal component scores
+#'   of the bins' log-normalised expression. Given `covariates` are added to
+#'   the data-driven ones. In simulations without labels (2 domains or 4
+#'   cell-type territories, minor 4-gene program of amplitude 1, tested with
+#'   `rff_program_test(null = "shift")`), `"kmeans"` with `k = 6` found the
+#'   minor program in 11/12 and 12/12 tissues (true labels: 12/12; no offset:
+#'   0/12), but only 8/12 and 1/12 at amplitude 0.5 (true labels: 10/12 and
+#'   12/12). PCA offsets with `k >= 5` absorbed the program (0-2/12).
+#' @param k Number of clusters (`"kmeans"`) or components (`"pca"`).
+#' @param seed Random seed for k-means.
+#' @param base Optional numeric matrix (bins or in-tissue bins x genes,
+#'   natural log scale, per unit area like the returned offset) of expected
+#'   expression that is already known - e.g. from [rff_expected_offset()],
+#'   the expected counts of each bin given the cell types that own its
+#'   transcripts. It enters every gene's regression as a fixed offset, so the
+#'   covariates only adjust it; with `covariates = NULL` (and
+#'   `method = "covariates"`) only a gene intercept is fitted. The returned
+#'   offset is `base` plus the fitted adjustment.
+#' @details An offset estimated from the same data is not neutral: the richer
+#'   it is, the more of any program it absorbs, and structure it misses is
+#'   called by [rff_program_test()] like any other shared structure (in the
+#'   simulations, k-means offsets left 1-3 components of the known structure
+#'   to be called in tissues without a minor program). With data-driven
+#'   offsets, report the number of clusters or components, check that
+#'   conclusions hold for neighbouring values, and judge called components by
+#'   their genes and maps.
 #'
 #' @return A numeric matrix (in-tissue bins x genes, natural log scale) for
 #'   `fit_spatial_rff(offset = )`.
@@ -984,33 +1263,93 @@ rff_fields <- function(fit, coords, x_col = "x", y_col = "y", by = NULL,
 #' fit <- fit_spatial_rff(b, n_factors = 3, offset = off, ard = 2,
 #'                        n_features = 32, max_iter = 50)
 #' fit$factor_strength
-rff_offset <- function(binned, covariates, genes = NULL, ridge = 1e-4) {
+rff_offset <- function(binned, covariates = NULL, genes = NULL, ridge = 1e-4,
+                       method = c("covariates", "kmeans", "pca"), k = 6, seed = 1,
+                       base = NULL) {
   if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
+  method <- match.arg(method)
   keep <- binned$coords$in_tissue
+  if (is.null(genes)) genes <- binned$genes
+  B0 <- NULL
+  if (!is.null(base)) {
+    B0 <- as.matrix(base)
+    if (!is.numeric(B0)) stop("`base` must be a numeric matrix (log scale).")
+    if (nrow(B0) == nrow(binned$coords)) B0 <- B0[keep, , drop = FALSE]
+    if (nrow(B0) != sum(keep)) stop("`base` needs one row per bin or per in-tissue bin.")
+    if (!is.null(colnames(B0))) {
+      if (!all(genes %in% colnames(B0))) stop("`base` lacks columns for some genes.")
+      B0 <- B0[, genes, drop = FALSE]
+    } else if (ncol(B0) != length(genes)) stop("`base` needs one column per gene.")
+    if (any(!is.finite(B0))) stop("`base` must be finite.")
+    if (is.null(covariates) && method == "covariates") covariates <- matrix(numeric(0), sum(keep), 0)
+  }
+  if (method != "covariates") {
+    dd <- .rff_data_covariates(binned, method, k, seed)
+    covariates <- if (is.null(covariates)) dd else {
+      cv <- as.data.frame(covariates); if (nrow(cv) == nrow(binned$coords)) cv <- cv[keep, , drop = FALSE]
+      cbind(cv, dd)
+    }
+  }
+  if (is.null(covariates)) stop("`covariates` is required for method = \"covariates\".")
   X <- as.data.frame(covariates)
   if (nrow(X) == nrow(binned$coords)) X <- X[keep, , drop = FALSE]
   if (nrow(X) != sum(keep)) stop("`covariates` needs one row per bin or per in-tissue bin.")
-  X <- stats::model.matrix(~ ., data = X)
+  X <- if (ncol(X)) stats::model.matrix(~ ., data = X) else matrix(1, nrow(X), 1, dimnames = list(NULL, "(Intercept)"))
   sc <- apply(X, 2, stats::sd); sc[!is.finite(sc) | sc == 0] <- 1; sc[1] <- 1
   X <- sweep(X, 2, sc, "/")
-  if (is.null(genes)) genes <- binned$genes
   Y <- as.matrix(binned$counts[keep, genes, drop = FALSE])
   la <- 2 * log(binned$grid$bin_size)
   P <- ncol(X); pen <- c(0, rep(ridge * nrow(X), P - 1))
   out <- vapply(seq_along(genes), function(j) {
     y <- Y[, j]
-    beta <- c(log((sum(y) + 0.5) / (nrow(X) * exp(la))), rep(0, P - 1))
+    b0 <- if (is.null(B0)) 0 else B0[, j]
+    lab <- la + b0
+    beta <- c(log((sum(y) + 0.5) / sum(exp(lab))), rep(0, P - 1))
+    if (sum(y) == 0) return(b0 + drop(X %*% beta))  # no counts: intercept from the pseudo-count only
     for (it in seq_len(50)) {                       # IRLS with a ridge penalty
-      eta <- la + drop(X %*% beta); mu <- exp(eta)
-      z <- eta - la + (y - mu) / mu
+      eta <- lab + drop(X %*% beta); mu <- exp(eta)
+      z <- eta - lab + (y - mu) / mu
       H <- crossprod(X * mu, X) + diag(pen, P)
-      nb <- solve(H, crossprod(X * mu, z))
+      nb <- tryCatch(solve(H, crossprod(X * mu, z)), error = function(e) NULL)
+      if (is.null(nb)) break                        # (near) singular: keep the current estimate
       if (max(abs(nb - beta)) < 1e-6) { beta <- drop(nb); break }
       beta <- drop(nb)
     }
-    drop(X %*% beta)
+    b0 + drop(X %*% beta)
   }, numeric(nrow(X)))
   out <- matrix(out, ncol = length(genes), dimnames = list(NULL, genes))
+  out
+}
+
+# Internal: data-driven covariates for rff_offset() when no labels are given.
+# Expression per in-tissue bin is log-normalised (log1p of counts scaled to the
+# median bin total) and smoothed with a Gaussian of one bin; "pca" returns the
+# top-k principal component scores, "kmeans" the smoothed (sd 2 bins)
+# composition of k k-means clusters of the top 10 PCs (one indicator dropped).
+.rff_data_covariates <- function(binned, method, k, seed) {
+  keep <- binned$coords$in_tissue; g <- binned$grid
+  k <- as.integer(k); if (k < 1) stop("`k` must be >= 1.")
+  msk <- matrix(as.numeric(keep), g$nx, g$ny)
+  smooth <- function(X, h) { mm <- pmax(.smooth_grid(msk, h), 1e-8)
+    apply(as.matrix(X), 2, function(v) { full <- numeric(length(keep)); full[keep] <- v
+      as.vector(.smooth_grid(matrix(full, g$nx, g$ny), h) / mm)[keep] }) }
+  Y <- as.matrix(binned$counts[keep, , drop = FALSE])
+  lib <- rowSums(Y)
+  X <- smooth(log1p(Y / pmax(lib, 1) * stats::median(lib[lib > 0])), 1)
+  X <- X[, apply(X, 2, stats::sd) > 0, drop = FALSE]
+  npc <- min(max(k, 10), ncol(X) - 1, nrow(X) - 1)
+  pcs <- stats::prcomp(X, rank. = npc)$x
+  if (method == "pca") {
+    if (k > ncol(pcs)) stop("`k` is larger than the number of available components.")
+    out <- as.data.frame(pcs[, seq_len(k), drop = FALSE])
+    colnames(out) <- paste0("PC", seq_len(k))
+    return(out)
+  }
+  if (k < 2) stop("method = \"kmeans\" needs k >= 2.")
+  .local_seed(seed)
+  cl <- stats::kmeans(pcs, k, nstart = 5, iter.max = 50)$cluster
+  comp <- smooth(vapply(seq_len(k), function(q) as.numeric(cl == q), numeric(length(cl))), 2)
+  out <- as.data.frame(comp[, -1, drop = FALSE]); colnames(out) <- paste0("cluster", seq_len(k)[-1])
   out
 }
 
@@ -1037,17 +1376,32 @@ rff_offset <- function(binned, covariates, genes = NULL, ridge = 1e-4) {
 #' @param binned The `binned_transcripts` object used for the fit.
 #' @param n_boot Number of simulated null data sets.
 #' @param max_iter Iterations for the refits (default: those of the fit).
+#'   The fits are usually stopped by `max_iter`, and the factor statistics
+#'   grow with the number of iterations, so a different value gives a
+#'   miscalibrated test (a warning is issued).
 #' @param statistic `"program"` (default; loading norm after removing the
 #'   mean over genes) or `"strength"` (raw loading norm).
 #' @param seed Random seed.
+#' @param sequential If `TRUE`, factors are also tested sequentially: the
+#'   factor with the `k`-th largest statistic is compared with the `k`-th
+#'   largest statistic of refits to data simulated from the null model plus
+#'   the `k - 1` stronger factors of the fit (so that structure already
+#'   explained is part of the null). Testing stops at the first factor with
+#'   `p > alpha`; the p-values (`p_sequential`, non-decreasing) are `NA`
+#'   after that. Costs up to one bootstrap per tested factor.
+#' @param alpha Level at which sequential testing stops.
+#' @param n_cores Number of cores for the refits (forked with
+#'   [parallel::mclapply()]; serial on Windows). The null data sets are
+#'   simulated before the refits, so results do not depend on `n_cores`.
 #'
 #' @return A data frame with one row per factor: `factor`, `strength` (raw
 #'   loading norm), `program_strength`, `uniform_share` (share of the squared
 #'   loading norm that is common to all genes; near 1 = cellularity-like),
 #'   `lengthscale`, `p` (share of null data sets whose largest statistic is
 #'   at least as large, with the +1 correction), and the top genes by
-#'   absolute loading. The null maxima are attached as attribute
-#'   `null_max`.
+#'   absolute loading, and `p_sequential` when `sequential = TRUE`. The
+#'   null maxima are attached as attribute `null_max` (and the sequential
+#'   null statistics as `null_sequential`).
 #' @seealso [fit_spatial_rff()], [rff_offset()], [rff_fields()]
 #' @export
 #' @examples
@@ -1058,7 +1412,8 @@ rff_offset <- function(binned, covariates, genes = NULL, ridge = 1e-4) {
 #' rff_factor_test(fit, b, n_boot = 4)
 #' }
 rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
-                            statistic = c("program", "strength"), seed = 1) {
+                            statistic = c("program", "strength"), seed = 1,
+                            n_cores = 1, sequential = FALSE, alpha = 0.05) {
   statistic <- match.arg(statistic)
   if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
   st <- fit$settings
@@ -1070,24 +1425,73 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
   la <- 2 * log(fit$bin_size)
   off <- if (is.null(fit$offset_matrix)) 0 else fit$offset_matrix[keep, genes, drop = FALSE]
   dens <- if (fit$has_density) fit$sigma0 * fit$field_grid[keep, "density"] else 0
-  mu0 <- exp(la + off + matrix(fit$alpha[genes], N, length(genes), byrow = TRUE) + dens)
+  eta0 <- la + off + matrix(fit$alpha[genes], N, length(genes), byrow = TRUE) + dens
   offset_arg <- if (is.null(fit$offset_matrix)) "area" else fit$offset_matrix
-  null_max <- vapply(seq_len(n_boot), function(b) {
-    ysim <- if (identical(st$family, "nb")) {
-      matrix(stats::rnbinom(length(mu0), size = rep(fit$dispersion[genes], each = N), mu = mu0), N)
-    } else matrix(stats::rpois(length(mu0), mu0), N)
-    bs <- binned
-    cnt <- Matrix::Matrix(0, nrow(binned$coords), length(genes), sparse = TRUE, dimnames = list(NULL, genes))
-    cnt[which(keep), ] <- ysim
-    bs$counts <- cnt; bs$genes <- genes
-    f0 <- fit_spatial_rff(bs, n_factors = st$n_factors, lengthscales = st$lengthscales,
-                          density_lengthscale = st$density_lengthscale, offset = offset_arg, ard = st$ard,
-                          n_features = st$n_features, family = st$family,
-                          max_iter = if (is.null(max_iter)) st$max_iter else max_iter, seed = seed + b)
-    if (statistic == "program") max(sqrt(colSums(sweep(f0$L, 2, colMeans(f0$L))^2))) else max(f0$factor_strength)
-  }, numeric(1))
+  it <- if (is.null(max_iter)) st$max_iter else max_iter
+  if (it != st$max_iter)
+    warning("`max_iter` differs from the fit's (", st$max_iter, "): the fits are stopped early, so the ",
+            "null statistics are not comparable with the observed ones.")
+  n_cores <- max(1L, as.integer(n_cores))
+  if (n_cores > 1 && .Platform$OS.type == "windows") {
+    warning("`n_cores > 1` uses forking, which is not available on Windows; running serially.")
+    n_cores <- 1L
+  }
+  stat_of <- function(L) if (statistic == "program") sqrt(colSums(sweep(L, 2, colMeans(L))^2)) else sqrt(colSums(L^2))
+  # parametric bootstrap from a given null mean: sorted statistics of each refit
+  boot <- function(mu0, stage) {
+    # simulate all null data sets first (same random stream for any n_cores)
+    sims <- lapply(seq_len(n_boot), function(b) {
+      if (identical(st$family, "nb")) {
+        matrix(stats::rnbinom(length(mu0), size = rep(fit$dispersion[genes], each = N), mu = mu0), N)
+      } else matrix(stats::rpois(length(mu0), mu0), N)
+    })
+    refit <- function(b) {
+      bs <- binned
+      cnt <- Matrix::Matrix(0, nrow(binned$coords), length(genes), sparse = TRUE, dimnames = list(NULL, genes))
+      cnt[which(keep), ] <- sims[[b]]
+      bs$counts <- cnt; bs$genes <- genes
+      f0 <- fit_spatial_rff(bs, n_factors = st$n_factors, lengthscales = st$lengthscales,
+                            density_lengthscale = st$density_lengthscale, offset = offset_arg, ard = st$ard,
+                            n_features = st$n_features, family = st$family, max_iter = it,
+                            seed = seed + b + (stage - 1) * n_boot,
+                            factor_init = if (is.null(st$factor_init)) "random" else st$factor_init,
+                            basis = if (is.null(st$basis)) "random" else st$basis,
+                            learn_lengthscales = if (is.null(st$learn_lengthscales)) TRUE else st$learn_lengthscales,
+                            l1 = if (is.null(st$l1)) 0 else st$l1, loadings = st$loadings)
+      sort(stat_of(f0$L), decreasing = TRUE)
+    }
+    res <- if (n_cores > 1) {
+      parallel::mclapply(seq_len(n_boot), refit, mc.cores = n_cores, mc.preschedule = FALSE)
+    } else lapply(seq_len(n_boot), refit)
+    if (length(res) != n_boot || !all(vapply(res, is.numeric, TRUE))) stop("Some bootstrap refits failed.")
+    do.call(rbind, res)
+  }
+  t0 <- Sys.time()
+  stat <- stat_of(fit$L)
+  ord <- order(-stat)
+  null_stats <- boot(exp(eta0), 1)
+  null_max <- null_stats[, 1]
+  p <- vapply(stat, function(v) (1 + sum(null_max >= v)) / (n_boot + 1), 0)
+  p_seq <- rep(NA_real_, length(stat))
+  if (sequential) {
+    # factor ranked k is compared with the k-th largest statistic of refits to
+    # data simulated from the fitted model with the k - 1 stronger factors
+    Fm <- fit$field_grid[keep, colnames(fit$L), drop = FALSE]
+    prev <- 0; seq_null <- list(null_max)
+    for (k in seq_along(ord)) {
+      if (k > 1) {
+        used <- ord[seq_len(k - 1)]
+        mu_k <- exp(eta0 + Fm[, used, drop = FALSE] %*% t(fit$L[genes, used, drop = FALSE]))
+        ns <- boot(mu_k, k); seq_null[[k]] <- ns[, k]
+      }
+      pk <- (1 + sum(seq_null[[k]] >= stat[ord[k]])) / (n_boot + 1)
+      prev <- max(prev, pk); p_seq[ord[k]] <- prev
+      if (prev > alpha) break
+    }
+  }
+  elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
   Lc <- sweep(fit$L, 2, colMeans(fit$L))
-  prog <- sqrt(colSums(Lc^2)); stat <- if (statistic == "program") prog else fit$factor_strength
+  prog <- sqrt(colSums(Lc^2))
   top <- vapply(seq_along(fit$factor_strength), function(k) {
     o <- order(-abs(fit$L[, k]))[seq_len(min(5, length(genes)))]
     paste(sprintf("%s (%+.2f)", genes[o], fit$L[o, k]), collapse = ", ")
@@ -1096,10 +1500,736 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
                     program_strength = unname(prog),
                     uniform_share = unname(1 - prog^2 / pmax(fit$factor_strength^2, 1e-12)),
                     lengthscale = fit$lengthscales,
-                    p = vapply(stat, function(v) (1 + sum(null_max >= v)) / (n_boot + 1), 0),
-                    top_genes = top, row.names = NULL)
+                    p = p, top_genes = top, row.names = NULL)
+  if (sequential) out$p_sequential <- p_seq
   attr(out, "null_max") <- null_max
+  if (sequential) attr(out, "null_sequential") <- seq_null
+  attr(out, "elapsed") <- elapsed
   out[order(out$p, -out$program_strength), ]
+}
+
+#' Gene-program test on smoothed residuals, with the fitted RFLVM as null model
+#'
+#' **Experimental.** A hybrid of residual PCA and the random-feature model.
+#' The fit of [fit_spatial_rff()] supplies the null model: bin area, `offset`,
+#' gene intercepts, the cellularity field and the part of every factor that is
+#' shared by all genes (the mean of its loadings), i.e. everything except gene
+#' programs. Pearson residuals of the counts under this null mean (negative
+#' binomial variance with the fitted dispersions) are Gaussian-smoothed; the
+#' per-bin direction of a multiplicative effect shared by all genes
+#' (proportional to \eqn{\sqrt{\mu}}) is projected out, genes are standardised,
+#' and the variance shares of the principal components are compared with
+#' those of data simulated from the null model (parametric bootstrap through
+#' the same pipeline).
+#'
+#' With `sequential = TRUE` (default), component `k` is compared with the
+#' `k`-th variance share of data simulated from the null model plus the gene
+#' programs (loadings minus their mean) of the `k - 1` strongest factors of
+#' the fit, so that structure already explained by earlier components is part
+#' of the null; testing stops at the first component with `p > alpha`
+#' (p-values are made non-decreasing).
+#'
+#' In simulations (300 x 300 um, 30 genes, 2 known domains in the offset;
+#' fit with `basis = "grid"`, fixed length scale 8 um, `ard = 100`) this test
+#' was as powerful as residual PCA with its own bootstrap (20/20 tissues at
+#' program amplitude 0.5, vs 12-13/20 for [rff_factor_test()]), called 1/40
+#' tissues whose only extra structure was cellularity shared by all genes
+#' (residual PCA 12/20) and 3/60 tissues without any program.
+#'
+#' @param fit Output of [fit_spatial_rff()] with a matrix or `"area"` offset.
+#' @param binned The `binned_transcripts` object used for the fit.
+#' @param bandwidth Standard deviation of the Gaussian smoothing (coordinate
+#'   units); default the bin size.
+#' @param n_components Number of components reported (and at most tested).
+#' @param n_boot Number of simulated null data sets per tested component.
+#' @param sequential Sequential testing (see Details); `FALSE` tests every
+#'   component against the largest variance share of the null.
+#' @param alpha Level at which sequential testing stops.
+#' @param seed Random seed.
+#' @param null How the null distribution is generated. `"parametric"`
+#'   (default): counts simulated from the fitted null model (independent
+#'   noise around a smooth mean), as described above. It assumes that
+#'   residual variation not shared by genes is spatially independent; when
+#'   genes have their own spatially autocorrelated residual structure (usual
+#'   in real tissue) it calls components in almost every tissue (100% of
+#'   simulated tissues with gene-specific residual fields) - significance
+#'   then means only "structure the offset misses".
+#'   `"shift"`: gene-shift surrogates that keep each gene's own spatial
+#'   autocorrelation. Every gene's counts are moved together with its null
+#'   mean by an independent random rigid transformation of the bin grid
+#'   (flips, transposition for square grids and a shift on the mirror-extended
+#'   grid, so that no seams are created), which destroys only the alignment
+#'   between genes. Residuals use the Poisson variance, the shared
+#'   multiplicative direction is removed and each bin is normalised over
+#'   genes; component `k` is compared with the `k`-th variance share of the
+#'   surrogates (parallel analysis) and sequential p-values are cumulative
+#'   maxima. Significance then means a program shared by several genes. In
+#'   simulations (300 x 300 um, 30 genes) it called 0/40 tissues without any
+#'   residual structure, 1/40, 1/40 and 4/40 with independent gene-specific
+#'   residual fields of length scale 10, 20 and 40 um, 0/20 with extra
+#'   cellularity, and 80% (amplitude 0.5) to 100% (amplitude >= 1) of
+#'   tissues with a 2-8-gene program. Gene-specific fields at scales larger
+#'   than the program mask it (amplitude 1 program with 20 um fields of sd
+#'   0.25: 4/30 called); use `highpass` then. A covariate missing from the
+#'   offset that moves several genes together is a shared structure and is
+#'   called. On real Xenium windows, data with every gene shifted
+#'   independently were called in 0/30 replicates for three windows but in
+#'   3/10 and 5/10 for two (an irregular tissue mask; a window dominated by a
+#'   large lymphoid aggregate), so borderline p-values on real data should
+#'   be read with care.
+#' @param highpass Only for `null = "shift"`: if given (coordinate units),
+#'   structure at scales above `highpass` is removed from the smoothed
+#'   residuals (difference of Gaussians with standard deviations `bandwidth`
+#'   and `highpass`), so that broad gene-specific residual fields do not mask
+#'   small-scale programs. With `highpass = 4 * bandwidth` (20 um), power
+#'   for an amplitude-1 program with 20 um gene-specific fields rose from
+#'   4/30 to 26/30 tissues, with 0-3/30 calls without a shared program.
+#'
+#' @return A data frame with one row per component: `component`, `share`
+#'   (variance share), `p`, `factor` and `r_factor` (the fitted factor whose
+#'   field correlates best with the component score, and that correlation)
+#'   and the top genes by loading. Attributes `scores` (in-tissue bins x
+#'   components), `loadings` (genes x components), `null_shares` and, for
+#'   `null = "shift"`, `null`.
+#' @seealso [fit_spatial_rff()], [rff_factor_test()], [rff_offset()]
+#' @export
+#' @examples
+#' \donttest{
+#' tx <- simulate_transcripts(size = 100, rate = 0.02, n_genes_per_set = 3)
+#' b <- bin_transcripts(tx, bin_size = 6)
+#' fit <- fit_spatial_rff(b, n_factors = 2, ard = 2, n_features = 24, max_iter = 40)
+#' rff_program_test(fit, b, n_boot = 19)
+#' }
+rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_boot = 99,
+                             sequential = TRUE, alpha = 0.05, seed = 1,
+                             null = c("parametric", "shift"), highpass = NULL) {
+  null <- match.arg(null)
+  if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
+  if (!is.null(highpass) && null != "shift") stop("`highpass` is only used with null = \"shift\".")
+  if (null == "shift") return(.rff_program_test_shift(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed, highpass))
+  if (identical(fit$offset, "smoothed_total")) stop("rff_program_test() supports offset = \"area\" or a matrix offset.")
+  .local_seed(seed)
+  keep <- fit$in_tissue; g <- fit$grid; genes <- fit$genes
+  h <- (if (is.null(bandwidth)) fit$bin_size else bandwidth) / g$bin_size
+  Y <- as.matrix(binned$counts[keep, genes, drop = FALSE]); N <- nrow(Y); J <- ncol(Y)
+  n_components <- max(1L, min(as.integer(n_components), J))
+  off <- if (is.null(fit$offset_matrix)) 0 else fit$offset_matrix[keep, genes, drop = FALSE]
+  Fm <- fit$field_grid[keep, colnames(fit$L), drop = FALSE]
+  Lc <- sweep(fit$L, 2, colMeans(fit$L))
+  eta <- 2 * log(fit$bin_size) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
+    (if (fit$has_density) fit$sigma0 * fit$field_grid[keep, "density"] else 0) +
+    Fm %*% t(fit$L - Lc)
+  mu <- exp(eta)
+  r <- if (identical(fit$family, "nb")) fit$dispersion[genes] else NULL
+  msk <- matrix(as.numeric(keep), g$nx, g$ny); msm <- pmax(.smooth_grid(msk, h), 1e-8)
+  smooth <- function(X) apply(X, 2, function(v) {
+    full <- numeric(length(keep)); full[keep] <- v
+    as.vector(.smooth_grid(matrix(full, g$nx, g$ny), h) / msm)[keep]
+  })
+  sdv <- sqrt(mu + if (is.null(r)) 0 else mu^2 / matrix(r, N, J, byrow = TRUE))
+  Wd <- sqrt(smooth(mu))
+  pcs <- function(Yx, k) {
+    R <- smooth((Yx - mu) / sdv)
+    R <- R - Wd * (rowSums(R * Wd) / rowSums(Wd * Wd))
+    R <- scale(R); R[!is.finite(R)] <- 0
+    sv <- svd(R, nu = k, nv = k)
+    list(share = sv$d^2 / sum(sv$d^2), u = sv$u, v = sv$v)
+  }
+  sim <- function(m) if (is.null(r)) matrix(stats::rpois(length(m), m), N) else
+    matrix(stats::rnbinom(length(m), size = rep(r, each = N), mu = m), N)
+  obs <- pcs(Y, n_components)
+  ordf <- order(-sqrt(colSums(Lc^2)))
+  p <- rep(NA_real_, n_components); prev <- 0; null_shares <- list()
+  for (k in seq_len(n_components)) {
+    if (sequential && k > 1) {
+      used <- ordf[seq_len(min(k - 1, length(ordf)))]
+      mk <- exp(eta + Fm[, used, drop = FALSE] %*% t(Lc[, used, drop = FALSE]))
+      kk <- k
+    } else { mk <- mu; kk <- 1 }
+    if (!sequential && k > 1) {
+      nul <- null_shares[[1]]
+    } else {
+      nul <- vapply(seq_len(n_boot), function(i) pcs(sim(mk), kk)$share[kk], 0)
+    }
+    null_shares[[k]] <- nul
+    pk <- (1 + sum(nul >= obs$share[k])) / (n_boot + 1)
+    if (sequential) {
+      prev <- max(prev, pk); p[k] <- prev
+      if (prev > alpha) break
+    } else p[k] <- pk
+  }
+  cc <- abs(stats::cor(obs$u[, seq_len(n_components), drop = FALSE], Fm)); cc[!is.finite(cc)] <- 0
+  top <- vapply(seq_len(n_components), function(k) {
+    o <- order(-abs(obs$v[, k]))[seq_len(min(5, J))]
+    paste(sprintf("%s (%+.2f)", genes[o], obs$v[o, k]), collapse = ", ")
+  }, "")
+  out <- data.frame(component = paste0("PC", seq_len(n_components)), share = obs$share[seq_len(n_components)],
+                    p = p, factor = colnames(Fm)[apply(cc, 1, which.max)], r_factor = apply(cc, 1, max),
+                    top_genes = top, row.names = NULL)
+  scores <- obs$u[, seq_len(n_components), drop = FALSE]; colnames(scores) <- out$component
+  loadings <- obs$v[, seq_len(n_components), drop = FALSE]; dimnames(loadings) <- list(genes, out$component)
+  attr(out, "scores") <- scores; attr(out, "loadings") <- loadings; attr(out, "null_shares") <- null_shares
+  out
+}
+
+# Internal: the pieces of the gene-shift test for one fitted window - observed
+# counts, null mean (offset, intercepts, cellularity field, all-gene part of
+# the factors), the residual processing (Poisson Pearson residuals, smoothing,
+# optional high-pass, removal of the shared multiplicative direction,
+# per-bin normalisation over genes, gene standardisation) and the surrogate
+# generator (independent rigid transformation of each gene's counts and mean
+# on the mirror-extended bin grid). No random numbers are drawn here.
+.rff_shift_prep <- function(fit, binned, bandwidth = NULL, highpass = NULL,
+                            shift_type = getOption("cohalu.shift_type", "mirror")) {
+  keep <- fit$in_tissue; g <- fit$grid; genes <- fit$genes; nx <- g$nx; ny <- g$ny
+  h <- (if (is.null(bandwidth)) fit$bin_size else bandwidth) / g$bin_size
+  Y <- as.matrix(binned$counts[keep, genes, drop = FALSE]); N <- nrow(Y); J <- ncol(Y)
+  off <- if (is.null(fit$offset_matrix)) 0 else fit$offset_matrix[keep, genes, drop = FALSE]
+  Fm <- fit$field_grid[keep, colnames(fit$L), drop = FALSE]
+  Lc <- sweep(fit$L, 2, colMeans(fit$L))
+  eta <- 2 * log(fit$bin_size) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
+    (if (fit$has_density) fit$sigma0 * fit$field_grid[keep, "density"] else 0) +
+    Fm %*% t(fit$L - Lc)
+  msk <- matrix(as.numeric(keep), nx, ny); msm <- pmax(.smooth_grid(msk, h), 1e-8)
+  # Gaussian smoothing of many columns with the kernel transform computed once
+  # (same result as .smooth_grid() column by column)
+  smoother <- function(sigma) {
+    ext <- ceiling(4 * sigma)
+    px <- stats::nextn(nx + 2 * ext); py <- stats::nextn(ny + 2 * ext)
+    lag <- function(p) { k <- 0:(p - 1); ifelse(k < p / 2, k, k - p) }
+    ker <- exp(-outer(lag(px)^2, lag(py)^2, "+") / (2 * sigma^2)); ker <- ker / sum(ker)
+    Kf <- stats::fft(ker) / (px * py)
+    kidx <- which(keep); pidx <- (kidx - 1L) %% nx + 1L + ((kidx - 1L) %/% nx) * px
+    function(X, mm) {
+      out <- matrix(0, length(kidx), ncol(X))
+      for (j in seq_len(ncol(X))) {
+        pad <- matrix(0, px, py); pad[pidx] <- X[, j]
+        out[, j] <- Re(stats::fft(stats::fft(pad) * Kf, inverse = TRUE))[pidx]
+      }
+      out / mm[kidx]
+    }
+  }
+  sm_h <- smoother(h)
+  smooth <- function(X, hh = h, mm = msm) if (identical(hh, h)) sm_h(X, mm) else sm_H(X, mm)
+  H <- if (is.null(highpass)) NULL else highpass / g$bin_size
+  if (!is.null(H)) { msH <- pmax(.smooth_grid(msk, H), 1e-8); sm_H <- smoother(H) }
+  process <- function(Yx, mu) {
+    mu <- pmax(mu, 1e-10)
+    R0 <- (Yx - mu) / sqrt(mu)
+    R <- smooth(R0)
+    if (!is.null(H)) R <- R - smooth(R0, H, msH)          # band-pass: remove broad structure
+    Wd <- smooth(sqrt(mu))
+    R <- R - Wd * (rowSums(R * Wd) / pmax(rowSums(Wd * Wd), 1e-12))
+    R <- R / pmax(sqrt(rowMeans(R^2)), 1e-12)
+    R <- scale(R); R[!is.finite(R)] <- 0
+    R
+  }
+  square <- nx == ny
+  full_idx <- which(keep)
+  # target in-tissue bins (0-based grid positions) and a lookup from grid cell to in-tissue row
+  ti <- (full_idx - 1L) %% nx; tj <- (full_idx - 1L) %/% nx
+  row_of <- integer(nx * ny); row_of[full_idx] <- seq_len(N)
+  surrogate <- function(mu) {
+    Ys <- matrix(0, N, J); Ms <- matrix(1e-10, N, J)
+    for (j in seq_len(J)) {
+      # random flips / transposition, then a shift on the mirror-extended (or plain) torus;
+      # the source cell of every target cell is computed directly
+      fx <- stats::runif(1) < 0.5; fy <- stats::runif(1) < 0.5
+      tr <- square && stats::runif(1) < 0.5
+      mir <- shift_type == "mirror"
+      px <- if (mir) 2L * nx else nx; py <- if (mir) 2L * ny else ny
+      sx <- sample.int(px, 1) - 1L; sy <- sample.int(py, 1) - 1L
+      P <- (ti + sx) %% px; Q <- (tj + sy) %% py
+      if (mir) { P <- ifelse(P >= nx, px - 1L - P, P); Q <- ifelse(Q >= ny, py - 1L - Q, Q) }
+      if (tr) { tmp <- P; P <- Q; Q <- tmp }                  # square grids only
+      if (fy) Q <- ny - 1L - Q
+      if (fx) P <- nx - 1L - P
+      from <- row_of[P + 1L + Q * nx]                         # in-tissue source row, or 0
+      ok <- from > 0
+      Ys[ok, j] <- Y[from[ok], j]; Ms[ok, j] <- mu[from[ok], j]
+    }
+    list(Y = Ys, mu = Ms)
+  }
+  list(Y = Y, mu = exp(eta), N = N, J = J, Fm = Fm, process = process, surrogate = surrogate)
+}
+
+# Internal: rff_program_test(null = "shift"). Residuals are taken against the
+# RFLVM null mean mu (offset, intercepts, cellularity field, all-gene part of
+# the factors): Poisson Pearson residuals, Gaussian smoothing, removal of the
+# shared multiplicative direction, per-bin normalisation over genes, PCA. The
+# null distribution comes from surrogate data in which every gene's counts and
+# its mean are moved together by an independent random rigid transformation of
+# the bin grid (flips, transposition for square grids, toroidal shift): each
+# gene keeps its own spatial structure and its relation to its own mean, but
+# the alignment between genes - a shared program - is destroyed. Component k
+# is compared with the k-th variance share of the surrogates (parallel
+# analysis); sequential p-values are cumulative maxima.
+.rff_program_test_shift <- function(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed,
+                                    highpass = NULL, shift_type = getOption("cohalu.shift_type", "mirror")) {
+  if (identical(fit$offset, "smoothed_total")) stop("rff_program_test() supports offset = \"area\" or a matrix offset.")
+  .local_seed(seed)
+  sp <- .rff_shift_prep(fit, binned, bandwidth, highpass, shift_type)
+  Y <- sp$Y; N <- sp$N; J <- sp$J; genes <- fit$genes; Fm <- sp$Fm
+  process <- sp$process; surrogate <- sp$surrogate
+  n_components <- max(1L, min(as.integer(n_components), J))
+  mu <- sp$mu
+  R <- process(Y, mu)
+  sv <- svd(R, nu = n_components, nv = n_components)
+  share <- (sv$d^2 / sum(sv$d^2))[seq_len(n_components)]
+  U <- sv$u; V <- sv$v
+  # surrogate spectra: k-th variance share of gene-shifted data (parallel analysis)
+  null_mat <- t(vapply(seq_len(n_boot), function(i) {
+    z <- surrogate(mu); d <- svd(process(z$Y, z$mu), nu = 0, nv = 0)$d
+    (d^2 / sum(d^2))[seq_len(n_components)]
+  }, numeric(n_components)))
+  if (n_components == 1) null_mat <- matrix(null_mat, ncol = 1)
+  null_shares <- lapply(seq_len(n_components), function(k) null_mat[, if (sequential) k else 1])
+  p <- vapply(seq_len(n_components), function(k) (1 + sum(null_shares[[k]] >= share[k])) / (n_boot + 1), 0)
+  if (sequential) {
+    p <- cummax(p)
+    stop_at <- which(p > alpha)[1]
+    if (!is.na(stop_at) && stop_at < n_components) p[(stop_at + 1):n_components] <- NA
+  }
+  cc <- abs(stats::cor(U, Fm)); cc[!is.finite(cc)] <- 0
+  top <- vapply(seq_len(n_components), function(k) {
+    o <- order(-abs(V[, k]))[seq_len(min(5, J))]
+    paste(sprintf("%s (%+.2f)", genes[o], V[o, k]), collapse = ", ")
+  }, "")
+  out <- data.frame(component = paste0("PC", seq_len(n_components)), share = share,
+                    p = p, factor = colnames(Fm)[apply(cc, 1, which.max)], r_factor = apply(cc, 1, max),
+                    top_genes = top, row.names = NULL)
+  colnames(U) <- out$component; dimnames(V) <- list(genes, out$component)
+  attr(out, "scores") <- U; attr(out, "loadings") <- V; attr(out, "null_shares") <- null_shares
+  attr(out, "null") <- "shift"
+  out
+}
+
+#' Gene-program test across several tissues or windows with shared loadings
+#'
+#' **Experimental.** Multi-window version of
+#' `rff_program_test(null = "shift")`. Each window (for example one window
+#' per tertiary lymphoid structure) has its own [fit_spatial_rff()] fit,
+#' which supplies its null mean (offset, gene intercepts, cellularity field
+#' and the all-gene part of the factors). The processed residuals of every
+#' window (Poisson Pearson residuals, Gaussian smoothing, removal of the
+#' shared multiplicative direction, per-bin normalisation over genes, gene
+#' standardisation within the window) are pooled into one gene x gene
+#' covariance, `sum_w c_w R_w' R_w`, whose eigenvectors are gene programs
+#' with **shared loadings**; each window keeps its own score map. Recurrent
+#' weak programs thus gain power from all windows, and no clustering of
+#' per-window components is needed.
+#'
+#' The null distribution comes from gene-shift surrogates generated
+#' independently in every window (each gene's counts and null mean moved by
+#' an independent rigid transformation of that window's mirror-extended bin
+#' grid), which keep every gene's own spatial structure but destroy the
+#' alignment between genes. Component `k` is compared with the `k`-th
+#' variance share of the pooled surrogate covariance (parallel analysis;
+#' sequential p-values are cumulative maxima).
+#'
+#' With `loadings` given, the test is confirmatory instead: for every window
+#' and program, the statistic is the share of the window's processed
+#' residual variance along the (unit-norm) program direction, compared with
+#' the same share in that window's surrogates (`p`, and `z` =
+#' (observed - surrogate mean) / surrogate sd, a calibrated measure of how
+#' strongly the program is spatially patterned there). The window statistics
+#' are also summed (with the window weights) and compared with the sum over
+#' windows of the surrogates (`combined`). Use it to validate programs found
+#' in other data (held-out patients) and to score program activity per
+#' window.
+#'
+#' @param fits List of [fit_spatial_rff()] fits (matrix or `"area"`
+#'   offset), all with the same genes in the same order.
+#' @param binned List of the matching `binned_transcripts` objects.
+#' @param loadings `NULL` (discovery) or a numeric matrix, genes x programs
+#'   (rows matched by gene name when named; missing genes get 0), on the
+#'   scale of the processed residuals, e.g. the `loadings` attribute of an
+#'   earlier call (confirmatory test).
+#' @param bandwidth,highpass As in [rff_program_test()].
+#' @param n_components Number of components reported and tested
+#'   (discovery).
+#' @param n_boot Number of surrogate data sets (each one shifts every window).
+#' @param sequential,alpha Sequential testing as in [rff_program_test()]
+#'   (discovery).
+#' @param seed Random seed.
+#' @param weights `"equal"` (default): every window contributes the same
+#'   total weight to the pooled covariance (`c_w = 1 / N_w`, `N_w` its
+#'   in-tissue bins), so that a few large windows do not dominate;
+#'   `"bins"`: every bin counts equally. A numeric vector (one value per
+#'   window) gives relative window weights on top of `"equal"`, e.g.
+#'   `1 / (number of windows of the patient)` so that every patient counts
+#'   the same.
+#' @param n_cores Cores for the surrogates (forked with
+#'   [parallel::mclapply()]; serial on Windows). Each surrogate data set has
+#'   its own seed, so results do not depend on `n_cores`.
+#'
+#' @return Discovery: a data frame with one row per component (`component`,
+#'   `share`, `p`, `top_genes`) and attributes `loadings` (genes x
+#'   components, unit norm), `scores` (list with one in-tissue bins x
+#'   components matrix per window), `window_share` (windows x components:
+#'   share of each window's residual variance along the component),
+#'   `null_shares` and `null = "shift_joint"`.
+#'   Confirmatory: a list with `windows` (one row per window x program:
+#'   `window`, `program`, `share`, `null_mean`, `null_sd`, `z`, `p`),
+#'   `combined` (one row per program: `share` (weighted mean over windows),
+#'   `null_mean`, `z`, `p`, `n_windows`) and `scores` (per-window score maps
+#'   of the programs).
+#' @seealso [rff_program_test()], [fit_spatial_rff_joint()],
+#'   [fit_spatial_rff()]
+#' @export
+#' @examples
+#' \donttest{
+#' b <- lapply(1:3, function(s) bin_transcripts(
+#'   simulate_transcripts(size = 80, rate = 0.02, n_genes_per_set = 3, seed = s), bin_size = 6))
+#' fits <- lapply(b, fit_spatial_rff, n_factors = 2, basis = "grid", lengthscales = 10,
+#'                learn_lengthscales = FALSE, max_iter = 30)
+#' jt <- rff_program_test_joint(fits, b, n_boot = 19, n_components = 3)
+#' jt
+#' # confirmatory scoring of the first component in each window
+#' rff_program_test_joint(fits, b, loadings = attr(jt, "loadings")[, 1, drop = FALSE],
+#'                        n_boot = 19)$windows
+#' }
+rff_program_test_joint <- function(fits, binned, loadings = NULL, bandwidth = NULL, highpass = NULL,
+                                   n_components = 6, n_boot = 99, sequential = TRUE, alpha = 0.05,
+                                   seed = 1, weights = c("equal", "bins"), n_cores = 1) {
+  wnum <- NULL
+  if (is.numeric(weights)) {
+    if (length(weights) != length(fits) || any(!is.finite(weights)) || any(weights < 0) || !any(weights > 0))
+      stop("Numeric `weights` need one non-negative value per window.")
+    wnum <- weights; weights <- "equal"
+  } else weights <- match.arg(weights)
+  if (inherits(fits, "spatial_rff_fit")) fits <- list(fits)
+  if (inherits(binned, "binned_transcripts")) binned <- list(binned)
+  if (!length(fits) || length(fits) != length(binned)) stop("`fits` and `binned` must be lists of the same length.")
+  if (!all(vapply(fits, inherits, TRUE, "spatial_rff_fit"))) stop("`fits` must come from fit_spatial_rff().")
+  if (any(vapply(fits, function(f) identical(f$offset, "smoothed_total"), TRUE)))
+    stop("rff_program_test_joint() supports offset = \"area\" or a matrix offset.")
+  genes <- fits[[1]]$genes
+  if (!all(vapply(fits, function(f) identical(f$genes, genes), TRUE))) stop("All fits must have the same genes in the same order.")
+  wn <- names(fits); if (is.null(wn)) wn <- paste0("window", seq_along(fits))
+  J <- length(genes)
+  n_cores <- max(1L, as.integer(n_cores))
+  if (n_cores > 1 && .Platform$OS.type == "windows") n_cores <- 1L
+  .local_seed(seed)
+  seeds <- sample.int(.Machine$integer.max, n_boot)
+  preps <- Map(function(f, b) .rff_shift_prep(f, b, bandwidth, highpass), fits, binned)
+  Nw <- vapply(preps, `[[`, 1, "N")
+  cw <- if (weights == "equal") 1 / Nw else rep(1 / sum(Nw), length(Nw))
+  if (!is.null(wnum)) cw <- cw * wnum
+  Robs <- lapply(preps, function(sp) sp$process(sp$Y, sp$mu))
+  # surrogate data: one list (over windows) of processed residual matrices per draw,
+  # reduced right away to what the statistic needs
+  run_boot <- function(reduce) {
+    one <- function(b) {
+      set.seed(seeds[b])
+      lapply(preps, function(sp) { z <- sp$surrogate(sp$mu); reduce(sp$process(z$Y, z$mu)) })
+    }
+    if (n_cores > 1) parallel::mclapply(seq_len(n_boot), one, mc.cores = n_cores, mc.preschedule = FALSE) else
+      lapply(seq_len(n_boot), one)
+  }
+  if (is.null(loadings)) {
+    n_components <- max(1L, min(as.integer(n_components), J))
+    Cw <- lapply(Robs, crossprod)
+    C <- Reduce(`+`, Map(`*`, Cw, cw))
+    e <- eigen(C, symmetric = TRUE)
+    share_all <- e$values / sum(e$values)
+    share <- share_all[seq_len(n_components)]
+    V <- e$vectors[, seq_len(n_components), drop = FALSE]
+    # sign: largest absolute loading positive
+    sg <- apply(V, 2, function(v) sign(v[which.max(abs(v))])); V <- sweep(V, 2, sg, "*")
+    bs <- run_boot(crossprod)
+    null_mat <- t(vapply(bs, function(cl) {
+      Cs <- Reduce(`+`, Map(`*`, cl, cw)); ev <- eigen(Cs, symmetric = TRUE, only.values = TRUE)$values
+      (ev / sum(ev))[seq_len(n_components)]
+    }, numeric(n_components)))
+    if (n_components == 1) null_mat <- matrix(null_mat, ncol = 1)
+    null_shares <- lapply(seq_len(n_components), function(k) null_mat[, if (sequential) k else 1])
+    p <- vapply(seq_len(n_components), function(k) (1 + sum(null_shares[[k]] >= share[k])) / (n_boot + 1), 0)
+    if (sequential) {
+      p <- cummax(p)
+      stop_at <- which(p > alpha)[1]
+      if (!is.na(stop_at) && stop_at < n_components) p[(stop_at + 1):n_components] <- NA
+    }
+    top <- vapply(seq_len(n_components), function(k) {
+      o <- order(-abs(V[, k]))[seq_len(min(5, J))]
+      paste(sprintf("%s (%+.2f)", genes[o], V[o, k]), collapse = ", ")
+    }, "")
+    out <- data.frame(component = paste0("PC", seq_len(n_components)), share = share, p = p,
+                      top_genes = top, row.names = NULL)
+    dimnames(V) <- list(genes, out$component)
+    scores <- lapply(Robs, function(R) { S <- R %*% V; colnames(S) <- out$component; S })
+    names(scores) <- wn
+    wsh <- t(vapply(Cw, function(Cm) colSums(V * (Cm %*% V)) / max(sum(diag(Cm)), 1e-12), numeric(n_components)))
+    if (n_components == 1) wsh <- matrix(wsh, ncol = 1)
+    dimnames(wsh) <- list(wn, out$component)
+    attr(out, "loadings") <- V; attr(out, "scores") <- scores; attr(out, "window_share") <- wsh
+    attr(out, "null_shares") <- null_shares; attr(out, "null") <- "shift_joint"
+    attr(out, "weights") <- stats::setNames(cw, wn)
+    return(out)
+  }
+  # confirmatory: fixed program directions
+  V <- as.matrix(loadings)
+  if (!is.numeric(V) || any(!is.finite(V))) stop("`loadings` must be a finite numeric matrix.")
+  if (!is.null(rownames(V))) {
+    miss <- setdiff(genes, rownames(V))
+    if (length(miss) == J) stop("No gene of the fits is a row name of `loadings`.")
+    V <- rbind(V, matrix(0, length(miss), ncol(V), dimnames = list(miss, colnames(V))))[genes, , drop = FALSE]
+  } else if (nrow(V) != J) stop("`loadings` needs one row per gene (or gene row names).")
+  nrm <- sqrt(colSums(V^2)); if (any(nrm == 0)) stop("A column of `loadings` is zero for these genes.")
+  V <- sweep(V, 2, nrm, "/")
+  pn <- colnames(V); if (is.null(pn)) pn <- paste0("program", seq_len(ncol(V))); colnames(V) <- pn
+  K <- ncol(V)
+  stat <- function(R) { tot <- max(sum(R^2), 1e-12); colSums((R %*% V)^2) / tot }
+  obs <- t(vapply(Robs, stat, numeric(K))); if (K == 1) obs <- matrix(obs, ncol = 1)
+  bs <- run_boot(stat)
+  # null array: windows x programs x draws
+  nul <- array(unlist(bs), dim = c(K, length(fits), n_boot))
+  nul <- aperm(nul, c(2, 1, 3))
+  nm <- apply(nul, c(1, 2), mean); nsd <- apply(nul, c(1, 2), stats::sd)
+  pw <- (1 + apply(sweep(nul, c(1, 2), obs, ">="), c(1, 2), sum)) / (n_boot + 1)
+  win <- data.frame(window = rep(wn, K), program = rep(pn, each = length(wn)),
+                    share = as.vector(obs), null_mean = as.vector(nm), null_sd = as.vector(nsd),
+                    z = as.vector((obs - nm) / pmax(nsd, 1e-12)), p = as.vector(pw), row.names = NULL)
+  wn_c <- cw / sum(cw)
+  S_obs <- colSums(obs * wn_c)
+  S_nul <- apply(nul, c(2, 3), function(v) sum(v * wn_c))       # programs x draws
+  if (K == 1) S_nul <- matrix(S_nul, nrow = 1)
+  comb <- data.frame(program = pn, share = S_obs, null_mean = rowMeans(S_nul),
+                     z = (S_obs - rowMeans(S_nul)) / pmax(apply(S_nul, 1, stats::sd), 1e-12),
+                     p = (1 + rowSums(S_nul >= S_obs)) / (n_boot + 1), n_windows = length(fits), row.names = NULL)
+  scores <- lapply(Robs, function(R) { S <- R %*% V; colnames(S) <- pn; S }); names(scores) <- wn
+  list(windows = win, combined = comb, scores = scores, loadings = V)
+}
+
+#' Random-feature factor model across several windows with shared loadings
+#'
+#' **Experimental.** Fits one set of gene loadings shared by several tissues
+#' or windows, with a window-specific Gaussian-process field for every
+#' program:
+#' \deqn{\log\mu_{wbj} = \log a + o_{wbj} + \alpha_{wj} + \sigma_{0w} f_{0w}(u_b) +
+#'   \sum_k L_{jk} f_{wk}(u_b).}
+#' Estimation alternates between (1) fitting every window with the loadings
+#' held fixed ([fit_spatial_rff()] with `loadings`, which estimates the
+#' fields, intercepts and cellularity field) and (2) updating the loadings of
+#' every gene by a ridge-penalised Poisson regression of its counts, pooled
+#' over all windows, on the fitted program fields (with each window's null
+#' part as offset). Loadings are rescaled to unit norm after every update;
+#' the size of a program in a window is its `amplitude` (standard deviation
+#' of its field there), a per-window measure of program activity.
+#'
+#' Start from directions found by [rff_program_test_joint()]; their
+#' residual-scale loadings are converted to the log scale internally when
+#' `init_scale = "residual"`.
+#'
+#' @param binned List of `binned_transcripts` objects with the same genes.
+#' @param offsets `NULL` (bin area only) or a list with one offset per window
+#'   (as accepted by [fit_spatial_rff()]; `NULL` entries mean `"area"`).
+#' @param loadings Initial loadings, genes x programs (rows matched by gene
+#'   name when named).
+#' @param init_scale `"residual"` (default; the loadings come from the
+#'   processed residuals of [rff_program_test_joint()] and are divided by
+#'   the square root of each gene's mean count per bin to put them on the log
+#'   scale) or `"log"`.
+#' @param n_iter Number of alternating rounds.
+#' @param lengthscales Fixed length scales of the program fields (recycled).
+#' @param ridge Ridge penalty on the loadings in the pooled update (the
+#'   single-window model uses 1, the standard normal prior).
+#' @param n_cores Cores for the per-window fits (forked with
+#'   [parallel::mclapply()]; serial on Windows).
+#' @param ... Further arguments for [fit_spatial_rff()] (e.g. `ard`,
+#'   `max_iter`, `family`, `density_lengthscale`); `basis = "grid"` and
+#'   fixed length scales are used.
+#'
+#' @return An object of class `spatial_rff_joint`: `loadings` (genes x
+#'   programs, unit-norm columns, log scale), `fits` (list of per-window
+#'   `spatial_rff_fit` objects with those loadings held fixed; `fit$L` =
+#'   loadings x amplitude), `amplitude` (windows x programs), `change`
+#'   (largest change of the loadings in each round) and `settings`.
+#' @seealso [rff_program_test_joint()], [fit_spatial_rff()]
+#' @export
+#' @examples
+#' \donttest{
+#' b <- lapply(1:3, function(s) bin_transcripts(
+#'   simulate_transcripts(size = 80, rate = 0.02, n_genes_per_set = 3, seed = s), bin_size = 6))
+#' fits <- lapply(b, fit_spatial_rff, n_factors = 2, basis = "grid", lengthscales = 10,
+#'                learn_lengthscales = FALSE, max_iter = 30)
+#' jt <- rff_program_test_joint(fits, b, n_boot = 9, n_components = 2)
+#' jf <- fit_spatial_rff_joint(b, loadings = attr(jt, "loadings")[, 1, drop = FALSE],
+#'                             n_iter = 2, lengthscales = 10, max_iter = 30)
+#' jf$amplitude
+#' }
+fit_spatial_rff_joint <- function(binned, offsets = NULL, loadings, init_scale = c("residual", "log"),
+                                  n_iter = 3, lengthscales = 20, ridge = 1, n_cores = 1, ...) {
+  init_scale <- match.arg(init_scale)
+  if (inherits(binned, "binned_transcripts")) binned <- list(binned)
+  if (!all(vapply(binned, inherits, TRUE, "binned_transcripts"))) stop("`binned` must be a list of bin_transcripts() objects.")
+  genes <- binned[[1]]$genes
+  if (!all(vapply(binned, function(b) identical(b$genes, genes), TRUE))) stop("All windows must have the same genes in the same order.")
+  W <- length(binned); J <- length(genes)
+  if (is.null(offsets)) offsets <- vector("list", W)
+  if (length(offsets) != W) stop("`offsets` needs one entry per window.")
+  wn <- names(binned); if (is.null(wn)) wn <- paste0("window", seq_len(W))
+  L <- as.matrix(loadings)
+  if (!is.null(rownames(L))) {
+    miss <- setdiff(genes, rownames(L))
+    L <- rbind(L, matrix(0, length(miss), ncol(L), dimnames = list(miss, colnames(L))))[genes, , drop = FALSE]
+  } else if (nrow(L) != J) stop("`loadings` needs one row per gene (or gene row names).")
+  K <- ncol(L); pn <- colnames(L); if (is.null(pn)) pn <- paste0("program", seq_len(K))
+  dots <- list(...)
+  dots$basis <- "grid"; dots$learn_lengthscales <- FALSE
+  if (is.null(dots$factor_init)) dots$factor_init <- "residual_pca"
+  if (init_scale == "residual") {
+    mbar <- Reduce(`+`, lapply(binned, function(b) Matrix::colSums(b$counts[b$coords$in_tissue, , drop = FALSE]))) /
+      sum(vapply(binned, function(b) sum(b$coords$in_tissue), 1))
+    L <- L / sqrt(pmax(mbar, 1e-3))
+  }
+  L <- sweep(L, 2, pmax(sqrt(colSums(L^2)), 1e-12), "/"); dimnames(L) <- list(genes, pn)
+  n_cores <- max(1L, as.integer(n_cores)); if (n_cores > 1 && .Platform$OS.type == "windows") n_cores <- 1L
+  fit_all <- function(L) {
+    one <- function(w) {
+      off <- if (is.null(offsets[[w]])) "area" else offsets[[w]]
+      do.call(fit_spatial_rff, c(list(binned[[w]], offset = off, loadings = L, lengthscales = lengthscales), dots))
+    }
+    if (n_cores > 1) parallel::mclapply(seq_len(W), one, mc.cores = n_cores, mc.preschedule = FALSE) else lapply(seq_len(W), one)
+  }
+  change <- numeric(0)
+  for (it in seq_len(n_iter)) {
+    fits <- fit_all(L)
+    if (!all(vapply(fits, inherits, TRUE, "spatial_rff_fit"))) stop("Some window fits failed.")
+    # pooled loading update: per gene, Poisson regression on the fields (field x amplitude)
+    Fl <- lapply(fits, function(f) f$field_grid[f$in_tissue, colnames(f$L), drop = FALSE] %*% diag(f$amplitude, K))
+    E0 <- lapply(seq_len(W), function(w) {
+      f <- fits[[w]]; keep <- f$in_tissue; N <- sum(keep)
+      off <- if (is.null(f$offset_matrix)) 0 else f$offset_matrix[keep, genes, drop = FALSE]
+      2 * log(f$bin_size) + off + matrix(f$alpha[genes], N, J, byrow = TRUE) +
+        (if (f$has_density) f$sigma0 * f$field_grid[keep, "density"] else 0)
+    })
+    Yl <- lapply(binned, function(b) as.matrix(b$counts[b$coords$in_tissue, genes, drop = FALSE]))
+    Fall <- do.call(rbind, Fl); Eall <- do.call(rbind, E0); Yall <- do.call(rbind, Yl)
+    Lnew <- L
+    for (j in seq_len(J)) {
+      beta <- L[j, ] * 0
+      for (s in seq_len(25)) {
+        eta <- Eall[, j] + drop(Fall %*% beta); mu <- exp(pmin(eta, 40))
+        g <- crossprod(Fall, Yall[, j] - mu) - ridge * beta
+        H <- crossprod(Fall * mu, Fall) + diag(ridge, K)
+        step <- solve(H, g); beta <- beta + drop(step)
+        if (max(abs(step)) < 1e-6) break
+      }
+      Lnew[j, ] <- beta
+    }
+    Lnew <- sweep(Lnew, 2, pmax(sqrt(colSums(Lnew^2)), 1e-12), "/")
+    # keep the orientation of each program
+    sg <- sign(colSums(Lnew * L)); sg[sg == 0] <- 1; Lnew <- sweep(Lnew, 2, sg, "*")
+    change <- c(change, max(abs(Lnew - L)))
+    L <- Lnew
+  }
+  fits <- fit_all(L)
+  names(fits) <- wn
+  amp <- t(vapply(fits, function(f) f$amplitude, numeric(K))); if (K == 1) amp <- matrix(amp, ncol = 1)
+  dimnames(amp) <- list(wn, pn)
+  structure(list(loadings = L, fits = fits, amplitude = amp, change = change,
+                 settings = c(list(n_iter = n_iter, lengthscales = lengthscales, ridge = ridge, init_scale = init_scale), dots)),
+            class = "spatial_rff_joint")
+}
+
+#' @export
+print.spatial_rff_joint <- function(x, ...) {
+  cat(sprintf("<spatial_rff_joint> %d windows, %d genes, %d shared programs\n",
+              length(x$fits), nrow(x$loadings), ncol(x$loadings)))
+  for (k in seq_len(ncol(x$loadings))) {
+    o <- order(-abs(x$loadings[, k]))[seq_len(min(6, nrow(x$loadings)))]
+    cat(sprintf("  %s: %s | median amplitude %.2f\n", colnames(x$loadings)[k],
+                paste(sprintf("%s%s", rownames(x$loadings)[o], ifelse(x$loadings[o, k] > 0, "+", "-")), collapse = " "),
+                stats::median(x$amplitude[, k])))
+  }
+  if (length(x$change)) cat("  largest loading change per round:", paste(signif(x$change, 2), collapse = ", "), "\n")
+  invisible(x)
+}
+
+#' Offset from the cell types that own each bin's transcripts
+#'
+#' **Experimental.** Known structure for a residual model at cell
+#' resolution. Every transcript of a *reference* gene (by default every
+#' gene that is not modelled) is attributed to the cell type of the cell
+#' that owns it (segmentation), or to its own class for unassigned or
+#' unlabelled transcripts. For modelled gene `j` and bin `b`, the expected
+#' count is \eqn{E_{bj} = \sum_t n_{bt}\rho_{jt}}, with \eqn{n_{bt}} the
+#' reference transcripts of type `t` in the bin and \eqn{\rho_{jt}} the
+#' ratio of gene `j` to reference transcripts in cells of type `t` (from
+#' `profiles`, e.g. a whole section, or from `tx`). Unlike a smoothed
+#' cell-type composition, this follows the actual cells, their size and
+#' their transcript capture, so that residuals describe variation within
+#' cell types (cell states, programs); modelled genes never enter their own
+#' expectation.
+#'
+#' @param binned A `binned_transcripts` object (the modelled genes are
+#'   `binned$genes`).
+#' @param tx Data frame of transcripts in the binned region, with
+#'   coordinates, gene and the owner's cell type (`NA` = unlabelled).
+#' @param type_col,x_col,y_col,gene_col Column names in `tx`.
+#' @param reference_genes Genes whose transcripts measure the local amount
+#'   of each cell type (default: all genes in `tx` or `profiles` that are not
+#'   modelled).
+#' @param profiles Optional numeric matrix, genes (rows) x cell types
+#'   (columns), of transcript counts per type from a larger region (e.g. the
+#'   whole section), used for \eqn{\rho}; default: computed from `tx`.
+#' @param pseudo Added to the expected counts, as a fraction of each gene's
+#'   mean expected count per in-tissue bin, to keep the log finite.
+#'
+#' @return A numeric matrix (all bins x modelled genes, natural log scale per
+#'   unit area) for `fit_spatial_rff(offset = )` or `rff_offset(base = )`,
+#'   with attribute `type_counts` (bins x types reference counts).
+#' @seealso [rff_offset()], [fit_spatial_rff()]
+#' @export
+#' @examples
+#' tx <- simulate_transcripts(size = 80, rate = 0.03, n_genes_per_set = 3, seed = 1)
+#' tx$type <- ifelse(tx$x < 40, "left", "right")      # stand-in for cell-type ownership
+#' b <- bin_transcripts(tx, bin_size = 8)
+#' b2 <- b; b2$genes <- b$genes[1:4]; b2$counts <- b$counts[, 1:4]
+#' off <- rff_expected_offset(b2, tx)
+#' dim(off)
+rff_expected_offset <- function(binned, tx, type_col = "type", x_col = "x", y_col = "y", gene_col = "gene",
+                                reference_genes = NULL, profiles = NULL, pseudo = 0.05) {
+  if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
+  tx <- as.data.frame(tx)
+  miss <- setdiff(c(type_col, x_col, y_col, gene_col), colnames(tx))
+  if (length(miss)) stop("Columns not found in `tx`: ", paste(miss, collapse = ", "))
+  g <- binned$grid; genes <- binned$genes
+  ty <- as.character(tx[[type_col]]); ty[is.na(ty)] <- "(unlabelled)"
+  gn <- as.character(tx[[gene_col]])
+  if (is.null(reference_genes)) reference_genes <- setdiff(unique(c(gn, if (!is.null(profiles)) rownames(profiles))), genes)
+  reference_genes <- setdiff(reference_genes, genes)
+  if (!length(reference_genes)) stop("No reference genes: every gene is modelled.")
+  if (is.null(profiles)) {
+    tab <- table(factor(gn, levels = unique(c(genes, reference_genes))), ty)
+    profiles <- matrix(as.numeric(tab), nrow(tab), dimnames = dimnames(tab))
+  }
+  profiles <- as.matrix(profiles)
+  if (!all(genes %in% rownames(profiles))) stop("`profiles` lacks rows for some modelled genes.")
+  types <- colnames(profiles)
+  ref_tot <- colSums(profiles[intersect(reference_genes, rownames(profiles)), , drop = FALSE])
+  rho <- sweep(profiles[genes, , drop = FALSE], 2, pmax(ref_tot, 1), "/")          # genes x types
+  # types in tx without a profile: pooled ratio
+  pooled <- rowSums(profiles[genes, , drop = FALSE]) / max(sum(ref_tot), 1)
+  ix <- floor((as.numeric(tx[[x_col]]) - g$xmin) / g$bin_size); iy <- floor((as.numeric(tx[[y_col]]) - g$ymin) / g$bin_size)
+  ok <- gn %in% reference_genes & ix >= 0 & ix < g$nx & iy >= 0 & iy < g$ny
+  allty <- sort(unique(ty[ok]))
+  nb <- g$nx * g$ny
+  bin <- ix[ok] + 1 + iy[ok] * g$nx
+  Nbt <- matrix(0, nb, length(allty), dimnames = list(NULL, allty))
+  tt <- table(factor(bin, levels = seq_len(nb)), factor(ty[ok], levels = allty))
+  Nbt[] <- as.numeric(tt)
+  R <- vapply(allty, function(t) if (t %in% types) rho[, t] else pooled, numeric(length(genes)))
+  R <- matrix(R, nrow = length(genes))
+  E <- Nbt %*% t(R)
+  keep <- binned$coords$in_tissue
+  mE <- colMeans(E[keep, , drop = FALSE])
+  E <- sweep(E, 2, pseudo * pmax(mE, 1e-6), "+")
+  out <- log(E) - 2 * log(g$bin_size)
+  dimnames(out) <- list(NULL, genes)
+  attr(out, "type_counts") <- Nbt
+  out
 }
 
 #' Model-based cross pair correlation from a fitted random-feature LGCP
