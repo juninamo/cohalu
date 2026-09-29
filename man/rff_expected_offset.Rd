@@ -13,7 +13,8 @@ rff_expected_offset(
   gene_col = "gene",
   reference_genes = NULL,
   profiles = NULL,
-  pseudo = 0.05
+  pseudo = 0.05,
+  neighbour_bandwidth = NULL
 )
 }
 \arguments{
@@ -35,11 +36,20 @@ whole section), used for \eqn{\rho}; default: computed from `tx`.}
 
 \item{pseudo}{Added to the expected counts, as a fraction of each gene's
 mean expected count per in-tissue bin, to keep the log finite.}
+
+\item{neighbour_bandwidth}{Optional Gaussian bandwidth (coordinate units,
+e.g. 8-10 um): also compute the counts expected from the cell types of
+the *neighbouring* bins (own bin excluded), returned as attribute
+`neighbour` (same scale as the offset). `neighbour - offset` is the log
+ratio of neighbour-expected to owner-expected counts; passed to
+`rff_offset(gene_covariates = )` it absorbs segmentation spill-over and
+mixed cells (transcripts of one cell type assigned to its neighbours).}
 }
 \value{
 A numeric matrix (all bins x modelled genes, natural log scale per
   unit area) for `fit_spatial_rff(offset = )` or `rff_offset(base = )`,
-  with attribute `type_counts` (bins x types reference counts).
+  with attribute `type_counts` (bins x types reference counts) and, with
+  `neighbour_bandwidth`, attribute `neighbour`.
 }
 \description{
 **Experimental.** Known structure for a residual model at cell
