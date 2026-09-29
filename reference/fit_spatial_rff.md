@@ -31,7 +31,14 @@ fit_spatial_rff(
   family = c("nb", "poisson"),
   max_iter = 500,
   seed = 1,
-  verbose = FALSE
+  verbose = FALSE,
+  init = NULL,
+  weights = NULL,
+  factor_init = c("random", "residual_pca"),
+  basis = c("random", "grid"),
+  learn_lengthscales = TRUE,
+  l1 = 0,
+  loadings = NULL
 )
 ```
 
@@ -119,6 +126,76 @@ fit_spatial_rff(
 
   Print optimizer progress.
 
+- init:
+
+  Optional earlier fit to the same bins and genes, made with the same
+  \`seed\` and \`n_features\` (hence the same random features), whose
+  null-model parts (gene intercepts, dispersions, cellularity field) are
+  used as starting values; the factors keep their usual initialisation.
+  Not used by \[rff_factor_test()\]: in simulations, bootstrap refits
+  warm-started this way gave much smaller null statistics than the
+  cold-started observed fit (family-wise false positives 5 of 10 null
+  tissues instead of 1 of 20), so the refits start from scratch.
+
+- weights:
+
+  Optional non-negative matrix (bins or in-tissue bins x genes) of
+  likelihood weights, e.g. 0 for entries held out for cross-validation.
+  In simulations, held-out-entry likelihood was not a reliable guide for
+  choosing \`ard\`: with a weak program it preferred penalties that
+  removed the program.
+
+- factor_init:
+
+  How the factors are initialised: \`"random"\` (default; small random
+  loadings and weights) or \`"residual_pca"\`: from a PCA of the
+  Gaussian-smoothed Pearson residuals under the starting null model (bin
+  area, \`offset\`, gene intercepts), after removing the direction of a
+  cellularity effect shared by all genes. Each score map is projected
+  onto the random features. \[rff_factor_test()\] uses the same
+  initialisation for its refits.
+
+- basis:
+
+  \`"random"\` (default): random Fourier features (\`n_features\`
+  frequencies). \`"grid"\`: the deterministic Fourier basis of the
+  (zero-padded) bin grid - each field is the RBF Gaussian process on a
+  torus, applied by FFT (circulant embedding), with one weight per
+  padded grid cell. The capacity then does not depend on \`n_features\`
+  (ignored), which matters for small-scale structure over large tissue;
+  fields at other points are interpolated bilinearly by
+  \[rff_fields()\]. In simulations with 10 um programs, the grid basis
+  with fixed length scales recovered the program map better (median
+  \|r\| 0.74 vs 0.60).
+
+- learn_lengthscales:
+
+  If \`FALSE\`, the factor length scales stay at \`lengthscales\` (the
+  cellularity length scale is still estimated). With \`basis = "grid"\`,
+  learned length scales tend to shrink to the bin size (fitting noise),
+  so fixed scales are recommended there.
+
+- l1:
+
+  L1 penalty on single loadings, \\\sum\_{jk} \lambda_j \|L\_{jk}\|\\
+  (smoothed at 0), in addition to the group penalty \`ard\`: a number or
+  one weight per gene (e.g. proportional to the square root of the
+  gene's counts). Encourages programs that involve few genes; in
+  simulations it did not improve the power of \[rff_factor_test()\].
+
+- loadings:
+
+  Optional numeric matrix (genes x factors, log scale; rows matched by
+  gene name when named, missing genes get 0) of loadings that are held
+  fixed: only the fields (and the null-model parts) are estimated, and
+  \`n_factors\` is set to \`ncol(loadings)\`. Use it to map gene
+  programs found elsewhere (e.g. shared loadings from
+  \[rff_program_test_joint()\] or \[fit_spatial_rff_joint()\]) in a new
+  tissue. The fitted field of each program is rescaled to unit variance
+  as usual, so \`fit\$L\` is \`loadings\` times the program's
+  \`amplitude\` in this tissue (the standard deviation of the fitted
+  field, returned as \`amplitude\`).
+
 ## Value
 
 An object of class \`spatial_rff_fit\` with the estimates (\`alpha\`,
@@ -127,7 +204,21 @@ An object of class \`spatial_rff_fit\` with the estimates (\`alpha\`,
 \`program_strength\` (norm after removing the loading shared by all
 genes, which cannot be told apart from cellularity), the random
 frequencies, the genes, the settings (\`settings\`, used by
-\[rff_factor_test()\]) and convergence information.
+\[rff_factor_test()\]) and convergence information; with fixed
+\`loadings\`, also \`amplitude\` (standard deviation of each program's
+fitted field; \`NULL\` otherwise).
+
+## Details
+
+The fields are evaluated on the bin grid through the factorisation
+\\\cos(\omega_x x + \omega_y y) = \cos\omega_x x \cos\omega_y y -
+\sin\omega_x x \sin\omega_y y\\, which turns the \\N \times M\\
+trigonometric evaluations into small matrix products (same result,
+several times faster; irregular coordinates fall back to the direct
+evaluation). The optimiser usually stops at \`max_iter\` rather than at
+convergence, so the loadings - and hence \`factor_strength\` - depend on
+\`max_iter\`; compare fits (and bootstrap refits) only at the same
+\`max_iter\`.
 
 ## References
 

@@ -18,7 +18,10 @@ rff_factor_test(
   n_boot = 19,
   max_iter = NULL,
   statistic = c("program", "strength"),
-  seed = 1
+  seed = 1,
+  n_cores = 1,
+  sequential = FALSE,
+  alpha = 0.05
 )
 ```
 
@@ -38,7 +41,10 @@ rff_factor_test(
 
 - max_iter:
 
-  Iterations for the refits (default: those of the fit).
+  Iterations for the refits (default: those of the fit). The fits are
+  usually stopped by \`max_iter\`, and the factor statistics grow with
+  the number of iterations, so a different value gives a miscalibrated
+  test (a warning is issued).
 
 - statistic:
 
@@ -49,6 +55,26 @@ rff_factor_test(
 
   Random seed.
 
+- n_cores:
+
+  Number of cores for the refits (forked with \[parallel::mclapply()\];
+  serial on Windows). The null data sets are simulated before the
+  refits, so results do not depend on \`n_cores\`.
+
+- sequential:
+
+  If \`TRUE\`, factors are also tested sequentially: the factor with the
+  \`k\`-th largest statistic is compared with the \`k\`-th largest
+  statistic of refits to data simulated from the null model plus the
+  \`k - 1\` stronger factors of the fit (so that structure already
+  explained is part of the null). Testing stops at the first factor with
+  \`p \> alpha\`; the p-values (\`p_sequential\`, non-decreasing) are
+  \`NA\` after that. Costs up to one bootstrap per tested factor.
+
+- alpha:
+
+  Level at which sequential testing stops.
+
 ## Value
 
 A data frame with one row per factor: \`factor\`, \`strength\` (raw
@@ -56,8 +82,9 @@ loading norm), \`program_strength\`, \`uniform_share\` (share of the
 squared loading norm that is common to all genes; near 1 =
 cellularity-like), \`lengthscale\`, \`p\` (share of null data sets whose
 largest statistic is at least as large, with the +1 correction), and the
-top genes by absolute loading. The null maxima are attached as attribute
-\`null_max\`.
+top genes by absolute loading, and \`p_sequential\` when \`sequential =
+TRUE\`. The null maxima are attached as attribute \`null_max\` (and the
+sequential null statistics as \`null_sequential\`).
 
 ## Details
 

@@ -425,6 +425,8 @@ log-Gaussian Cox process factor model (after Gundersen et al. 2021).
   : Interpret co-localization modules with gene sets
 - [`module_enrichr()`](https://juninamo.github.io/cohalu/reference/module_enrichr.md)
   : Query enrichR for each co-localization module
+- [`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md)
+  : Find spatial gene programs (recommended entry point)
 - [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
   : Fit a random-feature spatial factor model to binned transcripts
 - [`rff_fields()`](https://juninamo.github.io/cohalu/reference/rff_fields.md)
@@ -435,6 +437,19 @@ log-Gaussian Cox process factor model (after Gundersen et al. 2021).
   known structure
 - [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md)
   : Significance of residual spatial factors by parametric bootstrap
+- [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md)
+  : Gene-program test on smoothed residuals, with the fitted RFLVM as
+  null model
+- [`fit_spatial_rff_joint()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff_joint.md)
+  : Random-feature factor model across several windows with shared
+  loadings
+- [`rff_program_test_joint()`](https://juninamo.github.io/cohalu/reference/rff_program_test_joint.md)
+  : Gene-program test across several tissues or windows with shared
+  loadings
+- [`rff_expected_offset()`](https://juninamo.github.io/cohalu/reference/rff_expected_offset.md)
+  : Offset from the cell types that own each bin's transcripts
+- [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)
+  : Interactive HTML report of a residual RFLVM analysis
 - [`rff_pair_correlation()`](https://juninamo.github.io/cohalu/reference/rff_pair_correlation.md)
   : Model-based cross pair correlation from a fitted random-feature LGCP
 - [`colocalization_per_sample()`](https://juninamo.github.io/cohalu/reference/colocalization_per_sample.md)

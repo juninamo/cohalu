@@ -1,0 +1,199 @@
+# Interactive HTML report of a residual RFLVM analysis
+
+\*\*Experimental.\*\* Writes a single self-contained HTML file (no
+external requests; data embedded, maps drawn on \`\<canvas\>\`) that
+summarises a fit of \[fit_spatial_rff()\], optionally with the results
+of \[rff_factor_test()\] and / or \[rff_program_test()\], per-cell
+factor values (\[rff_fields()\]) and the overlap of the factors with
+known gene programs. Machine-readable outputs (CSV tables, the fit as
+RDS, the settings and an R script to reproduce the analysis) are written
+next to it and listed in the report.
+
+## Usage
+
+``` r
+rff_report(
+  fit,
+  binned,
+  test = NULL,
+  file = "rflvm_report.html",
+  title = NULL,
+  top_genes = 15,
+  cells = NULL,
+  cell_label_col = NULL,
+  cell_xy = c("x", "y"),
+  known_programs = NULL,
+  offset_info = NULL,
+  meta = NULL,
+  map_genes = NULL,
+  n_map_genes = 30,
+  max_pixels = 40000,
+  max_cells = 20000,
+  alpha = 0.05,
+  min_r = 0.5,
+  export = TRUE,
+  out_dir = NULL,
+  open = interactive(),
+  window = NULL
+)
+```
+
+## Arguments
+
+- fit:
+
+  Output of \[fit_spatial_rff()\] or \[rff_programs()\], or a
+  multi-window fit of \[fit_spatial_rff_joint()\] (see \`window\`).
+
+- binned:
+
+  The \`binned_transcripts\` object used for the fit (a list of them for
+  a multi-window fit).
+
+- test:
+
+  \`NULL\`, a data frame returned by \[rff_factor_test()\] or
+  \[rff_program_test()\], or a (named) list of such data frames.
+
+- file:
+
+  Path of the HTML file.
+
+- title:
+
+  Report title (default: derived from the fit).
+
+- top_genes:
+
+  Number of top genes per program shown in the ranked bar lists (the
+  heatmap shows up to 8 per program).
+
+- cells:
+
+  Optional data frame of cells (centroids) with coordinates in the frame
+  of the transcripts, and optionally a label column.
+
+- cell_label_col:
+
+  Column of \`cells\` with cell-type (or other) labels.
+
+- cell_xy:
+
+  Coordinate columns of \`cells\`.
+
+- known_programs:
+
+  Optional named list of character vectors (gene sets); each factor /
+  component is compared with each set (correlation of the loadings with
+  set membership, overlap of the top genes).
+
+- offset_info:
+
+  Optional list describing the offset, e.g. \`list(method = "kmeans", k
+  = 6)\` or \`list(method = "covariates", covariates = cv, call =
+  "rff_offset(b, cv)")\`. The fit does not record how a matrix offset
+  was made; without this the report says so.
+
+- meta:
+
+  Optional named list of sample / section identifiers and other notes
+  (e.g. \`list(sample = "S1", section = "A", window = "...")\`), shown
+  in the input section.
+
+- map_genes:
+
+  Genes whose maps are embedded (in addition to the top genes of each
+  program, up to \`n_map_genes\` in total).
+
+- n_map_genes:
+
+  Maximum number of embedded gene maps.
+
+- max_pixels:
+
+  Maximum number of grid cells per embedded map; larger grids are
+  block-averaged for display (with a warning).
+
+- max_cells:
+
+  Maximum number of cells drawn as points (summaries use all cells).
+
+- alpha:
+
+  Significance level used for flags and findings.
+
+- export:
+
+  Write the machine-readable outputs to \`out_dir\`.
+
+- out_dir:
+
+  Directory for the outputs (default: \`\<file without
+  extension\>\_files\` next to the HTML).
+
+- open:
+
+  Open the report in the browser (\[utils::browseURL()\]).
+
+- window:
+
+  Only for a multi-window fit (\[fit_spatial_rff_joint()\] given as
+  \`fit\`, with \`binned\` the list of its windows): the window (name or
+  index) whose fields are shown; default the window with the largest
+  total program amplitude. \`test\` may then be the discovery-mode
+  output of \[rff_program_test_joint()\] (p-values of the joint test,
+  variance shares and scores of this window); the shared loadings and
+  the per-window amplitudes are summarised in the input section.
+
+## Value
+
+The path of the HTML file, invisibly.
+
+## Details
+
+The report has, in order: an overview; \*\*Input data\*\* (bins, genes,
+counts per bin, the offset / known structure and how much of each gene's
+deviance it explains, cells, known programs, all fit and test
+arguments); \*\*Key findings\*\* (plain-language bullets with ok /
+caution / warning badges: significant programs, their genes, length
+scales, cellularity-like factors, cell types, known-program overlap, and
+warnings such as a fit stopped at \`max_iter\`, calibration caveats of
+the null used, few bins, an irregular tissue mask, factors shrunk by ARD
+or dominated by one or two genes); \*\*Output files\*\*; sortable tables
+of the program maps and detection axes - clicking a row selects it
+everywhere; spatial maps with pan / zoom (drag, wheel; double-click
+resets), hover values and a scale bar, small multiples of every field,
+the cellularity field, total counts, the offset and, for selected genes,
+observed counts, the null expectation (offset, intercept and
+cellularity, without factors), their log ratio and the factor
+contribution \\\sum_k L\_{jk} f_k\\; a loading heatmap, ranked gene bars
+and a gene search; per-cell summaries by label; the known-program table;
+null distributions of the tests; methods; how to reproduce; session
+information.
+
+## Names used in the report
+
+The factors of the fit are shown as \*\*program maps\*\* M1, M2, ...
+(the smooth field and gene loadings used for interpretation) and the PCs
+of \[rff_program_test()\] as \*\*detection axes\*\* D1, D2, ... (which
+decide whether and how many programs exist). Object and column names are
+unchanged (\`factor1\`, \`PC1\`, ...); exported tables carry a
+\`display_name\` column and \`display_names.csv\` maps the two.
+
+## See also
+
+\[fit_spatial_rff()\], \[rff_factor_test()\], \[rff_program_test()\],
+\[rff_fields()\], \[rff_offset()\]
+
+## Examples
+
+``` r
+# \donttest{
+tx <- simulate_transcripts(size = 100, rate = 0.02, n_genes_per_set = 3)
+b <- bin_transcripts(tx, bin_size = 6)
+fit <- fit_spatial_rff(b, n_factors = 2, ard = 2, n_features = 24, max_iter = 40)
+pt <- rff_program_test(fit, b, n_boot = 19, null = "shift")
+f <- rff_report(fit, b, test = pt, file = file.path(tempdir(), "rflvm_report.html"),
+                known_programs = list(A = c("A_1", "A_2", "A_3")), open = FALSE)
+# }
+```

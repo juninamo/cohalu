@@ -72,7 +72,16 @@ spatially coherent variation that the covariates do not explain.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rff_offset</span><span class="op">(</span><span class="va">binned</span>, <span class="va">covariates</span>, genes <span class="op">=</span> <span class="cn">NULL</span>, ridge <span class="op">=</span> <span class="fl">1e-04</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">rff_offset</span><span class="op">(</span></span>
+<span>  <span class="va">binned</span>,</span>
+<span>  covariates <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  genes <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ridge <span class="op">=</span> <span class="fl">1e-04</span>,</span>
+<span>  method <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"covariates"</span>, <span class="st">"kmeans"</span>, <span class="st">"pca"</span><span class="op">)</span>,</span>
+<span>  k <span class="op">=</span> <span class="fl">6</span>,</span>
+<span>  seed <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  base <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -97,11 +106,56 @@ section labels) are expanded to indicator columns. An intercept is added.</p></d
 <dd><p>Small ridge penalty stabilising the per-gene fits (collinear
 or sparse covariates).</p></dd>
 
+
+<dt id="arg-method">method<a class="anchor" aria-label="anchor" href="#arg-method"></a></dt>
+<dd><p>Where the covariates come from. `"covariates"` (default):
+`covariates` as given. When no labels are available: `"kmeans"` - the
+locally smoothed composition of `k` k-means clusters of the bins'
+log-normalised expression (top 10 principal components), a stand-in for
+cell-type composition; `"pca"` - the top `k` principal component scores
+of the bins' log-normalised expression. Given `covariates` are added to
+the data-driven ones. In simulations without labels (2 domains or 4
+cell-type territories, minor 4-gene program of amplitude 1, tested with
+`rff_program_test(null = "shift")`), `"kmeans"` with `k = 6` found the
+minor program in 11/12 and 12/12 tissues (true labels: 12/12; no offset:
+0/12), but only 8/12 and 1/12 at amplitude 0.5 (true labels: 10/12 and
+12/12). PCA offsets with `k &gt;= 5` absorbed the program (0-2/12).</p></dd>
+
+
+<dt id="arg-k">k<a class="anchor" aria-label="anchor" href="#arg-k"></a></dt>
+<dd><p>Number of clusters (`"kmeans"`) or components (`"pca"`).</p></dd>
+
+
+<dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
+<dd><p>Random seed for k-means.</p></dd>
+
+
+<dt id="arg-base">base<a class="anchor" aria-label="anchor" href="#arg-base"></a></dt>
+<dd><p>Optional numeric matrix (bins or in-tissue bins x genes,
+natural log scale, per unit area like the returned offset) of expected
+expression that is already known - e.g. from [rff_expected_offset()],
+the expected counts of each bin given the cell types that own its
+transcripts. It enters every gene's regression as a fixed offset, so the
+covariates only adjust it; with `covariates = NULL` (and
+`method = "covariates"`) only a gene intercept is fitted. The returned
+offset is `base` plus the fitted adjustment.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A numeric matrix (in-tissue bins x genes, natural log scale) for
   `fit_spatial_rff(offset = )`.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>An offset estimated from the same data is not neutral: the richer
+  it is, the more of any program it absorbs, and structure it misses is
+  called by [rff_program_test()] like any other shared structure (in the
+  simulations, k-means offsets left 1-3 components of the known structure
+  to be called in tissues without a minor program). With data-driven
+  offsets, report the number of clusters or components, check that
+  conclusions hold for neighbouring values, and judge called components by
+  their genes and maps.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -119,7 +173,7 @@ or sparse covariates).</p></dd>
 <span class="r-in"><span>                       n_features <span class="op">=</span> <span class="fl">32</span>, max_iter <span class="op">=</span> <span class="fl">50</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">factor_strength</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>  factor1  factor2  factor3 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1.357359 1.733956 1.128550 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1.357359 1.733957 1.128547 </span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

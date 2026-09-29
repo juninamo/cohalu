@@ -60,6 +60,32 @@
 
 ### New features
 
+- Several windows at once (experimental, in development):
+  [`rff_program_test_joint()`](https://juninamo.github.io/cohalu/reference/rff_program_test_joint.md)
+  tests gene programs across several tissues or windows with shared
+  loadings,
+  [`fit_spatial_rff_joint()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff_joint.md)
+  fits the factor model across windows with shared loadings, and
+  [`rff_expected_offset()`](https://juninamo.github.io/cohalu/reference/rff_expected_offset.md)
+  builds an offset from the cell types that own each bin’s transcripts.
+  `rff_offset(base = )` adds covariates on top of such an offset, and
+  `fit_spatial_rff(loadings = )` maps given programs in a new tissue
+  (fixed loadings; per-tissue `amplitude`). In simulations (8 windows,
+  30 genes, 4-gene program, gene-own residual fields, `highpass = 20`),
+  the joint test found a program of amplitude 0.35 / 0.5 in 13/20 /
+  20/20 window sets while per-window tests found it in 0% / 10% of
+  windows; without a program it called 0/20 (with or without gene-own
+  fields); held-out confirmation (`loadings =`) was significant in 18/20
+  / 20/20. On 195 real TLS windows, gene-shifted sanity data were called
+  in 30/585 replicates (5.1%).
+  [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)
+  accepts a
+  [`fit_spatial_rff_joint()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff_joint.md)
+  fit (new argument `window`) and the discovery output of
+  [`rff_program_test_joint()`](https://juninamo.github.io/cohalu/reference/rff_program_test_joint.md).
+  [`rff_program_test_joint()`](https://juninamo.github.io/cohalu/reference/rff_program_test_joint.md)
+  now reduces each surrogate draw inside the worker (memory) and
+  recomputes draws lost in a parallel worker serially.
 - Residual random-feature model (experimental):
   [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
   accepts a per-bin, per-gene log `offset` matrix describing structure
@@ -79,6 +105,85 @@
   significant in simulations without any program.
   [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
   also returns `program_strength`.
+- [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
+  is several times faster on binned data (about 5x for 256 random
+  features; same objective to numerical precision): on the bin grid,
+  `cos/sin(w_x x + w_y y)` factorise into x- and y-parts, so the fields,
+  their length-scale derivatives and the weight gradients are small
+  matrix products instead of bins x features trigonometric evaluations.
+  Irregular coordinates use the previous direct evaluation.
+- [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md):
+  new `factor_init = "residual_pca"` (start the factors from a PCA of
+  smoothed Pearson residuals under the offset), `init` (warm start of
+  the intercepts, dispersions and cellularity field from an earlier fit)
+  and `weights` (per-entry likelihood weights, e.g. for held-out
+  cross-validation). The fit settings now include `factor_init`.
+  [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md)
+  does not warm-start its refits: in simulations, warm-started null
+  refits had much smaller statistics than the cold-started observed fit
+  (false positives in 5 of 10 null tissues).
+- [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md):
+  new `n_cores` (parallel refits by forking; the null data sets are
+  simulated first, so results do not depend on `n_cores`). A `max_iter`
+  different from the fit’s now triggers a warning: the optimiser usually
+  stops at `max_iter` and the factor statistics grow with the number of
+  iterations, so null refits with fewer iterations than the observed fit
+  make the test anti-conservative. The run time is returned as attribute
+  `elapsed`.
+- [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md):
+  new `basis = "grid"` - each field is the RBF Gaussian process on the
+  zero-padded bin grid, applied by FFT (circulant embedding), instead of
+  `n_features` random frequencies; new `learn_lengthscales` (fixed
+  factor length scales) and `l1` (L1 penalty on single loadings, one
+  weight per gene allowed). In simulations the grid basis with a fixed 8
+  um length scale recovered 10 um programs better (median \|r\| 0.74 vs
+  0.60 at amplitude 1; 0.81 with `factor_init = "residual_pca"`,
+  residual PCA 0.84); learned length scales shrank to the bin size with
+  the grid basis. `l1` did not improve power.
+  [`rff_fields()`](https://juninamo.github.io/cohalu/reference/rff_fields.md)
+  interpolates grid-basis fields.
+- [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md):
+  new `sequential = TRUE` - the factor ranked `k` is compared with
+  refits to data simulated from the null model plus the `k - 1` stronger
+  factors (column `p_sequential`). With one planted structure, 5/6
+  simulated tissues called exactly one factor (2-3 with the max-null
+  p-values); in a real Xenium synovium window where the max-null test
+  called all 6 factors, 3-4 were called.
+- New
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md)
+  (experimental): residual PCA of smoothed Pearson residuals with the
+  fitted RFLVM (offset, intercepts, cellularity field and the all-gene
+  part of every factor) as null model and parametric bootstrap, tested
+  sequentially. In simulations it matched the power of residual PCA
+  (20/20 at amplitude 0.5;
+  [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md)
+  12-13/20) while keeping the calibration (3/60 without program; 1/40
+  with extra cellularity only, residual PCA 12/20).
+- [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md):
+  new `null = "shift"` - a null that keeps each gene’s own spatial
+  autocorrelation. Every gene’s counts are moved together with its null
+  mean by an independent random flip/transposition and a shift on the
+  mirror-extended bin grid; only the alignment between genes is
+  destroyed, so significance means a program shared by several genes
+  rather than any structure the offset misses. Components are compared
+  with the surrogates’ spectra (parallel analysis, sequential). With
+  gene-specific residual fields (10-40 um) the parametric null called
+  100% of simulated tissues, the gene-shift null 0-10% (0/40 without
+  residual structure); power 80-100% for programs of amplitude 0.5-1.
+  New `highpass` (band-pass filtering of the residuals) restores power
+  when broad gene-specific fields mask small-scale programs. Toroidal
+  shifts without mirror extension were miscalibrated (18-32% false
+  calls) and are not offered.
+- [`rff_offset()`](https://juninamo.github.io/cohalu/reference/rff_offset.md):
+  new `method = c("covariates", "kmeans", "pca")` and `k` for data
+  without labels: the offset is built from the smoothed composition of
+  `k` k-means clusters of the bins’ log-normalised expression (a
+  stand-in for cell-type composition) or from its top `k` principal
+  components. `covariates` is now optional for these methods (existing
+  calls are unchanged). In simulations without labels, `"kmeans"`
+  (`k = 6`) found a minor 4-gene program of amplitude 1 in 23/24 tissues
+  (true labels 24/24, no offset 0/24); PCA offsets with `k >= 5`
+  absorbed it.
 - [`rff_fields()`](https://juninamo.github.io/cohalu/reference/rff_fields.md)
   (experimental): evaluates the latent fields of a
   [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
@@ -88,6 +193,48 @@
   [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
   now also stores the coordinate centre used for the random features
   (`center`); older fits still work.
+- New
+  [`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md)
+  (experimental; the recommended entry point for spatial gene programs):
+  one call that builds the offset (a shortcut `"kmeans"` / `"pca"` /
+  `"smoothed_total"` / `"area"`, covariates or a matrix; recorded in
+  `offset_info`), fits
+  [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
+  (grid basis, fixed length scale, residual-PCA initialisation, ARD),
+  runs
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md)
+  (gene-shift null, sequential; optionally
+  [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md))
+  and returns one Programs table: significant detection axes
+  (program-test PCs) matched to program maps (fit factors) by \|r\|,
+  with status Confirmed / Candidate / Not supported /
+  Cellularity-technical. [`print()`](https://rdrr.io/r/base/print.html),
+  [`summary()`](https://rdrr.io/r/base/summary.html),
+  [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html);
+  [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)
+  accepts the result directly.
+- New
+  [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)
+  (experimental): writes a single self-contained, interactive HTML
+  report of a (residual) RFLVM analysis - input data and offset summary,
+  auto-generated key findings with ok / caution / warning flags
+  (significance, cellularity-like factors, calibration caveats of the
+  null used, fit stopped at `max_iter`, …), a sortable factor table, pan
+  / zoom maps of every field and of selected genes (observed, null
+  expectation, log ratio, factor contribution), loadings heatmap and
+  gene search, per-cell summaries by label, overlap with known gene
+  programs, the null distributions of
+  [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md)
+  /
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md),
+  methods and code to reproduce. With `export = TRUE` (default) the
+  factor table, loadings, fields per bin, cell values, test results and
+  null statistics (CSV), the fit (RDS), the settings (JSON) and an R
+  script are written to `<report>_files/`. The main result is a merged
+  Programs table (as in
+  [`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md));
+  detection axes and program maps are in a collapsed “Details &
+  diagnostics” section. No new dependencies.
 - [`associate_continuous()`](https://juninamo.github.io/cohalu/reference/associate_continuous.md):
   association of per-image / per-patient co-localization with a
   continuous clinical variable (CRP, disease activity, age): Spearman on
