@@ -648,6 +648,12 @@ pcf_matrix <- function(binned, gene_sets, r_max = 100, r_step = binned$grid$bin_
 #'   by all genes cannot raise genes whose fraction is already near 1, so a
 #'   spurious program with loadings that decrease with each gene's overall
 #'   fraction appears (log-link saturation).
+#'   `"multinomial"` models each bin's counts over the modelled genes
+#'   given the bin's total (a free effect per bin, profiled out: Poisson
+#'   with a bin intercept), so everything that scales all genes of a bin
+#'   together - cellularity, transcriptome size, capture - drops out and no
+#'   cellularity field is fitted. Supported by the gene-shift and
+#'   cross-fitted program tests and the length-scale profiles.
 #' @param trials With `family = "binomial"`: numeric matrix of trials (bins
 #'   or in-tissue bins x genes, columns matched by name when named),
 #'   `>= binned$counts`.
@@ -743,7 +749,7 @@ fit_spatial_rff <- function(binned, n_factors = 3,
                             offset_genes = NULL,
                             ard = 0,
                             n_features = 64,
-                            family = c("nb", "poisson", "binomial"),
+                            family = c("nb", "poisson", "binomial", "multinomial"),
                             max_iter = 500,
                             seed = 1,
                             verbose = FALSE,
@@ -813,8 +819,13 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   U <- as.matrix(binned$coords[keep, c("x", "y")])
   U <- sweep(U, 2, colMeans(U))
   N <- nrow(Y); J <- ncol(Y); K <- n_factors; M <- n_features
+  if (family == "multinomial") {
+    if (!(is.matrix(offset) || is.data.frame(offset)) && !identical(offset[1], "area"))
+      stop("family = \"multinomial\" supports offset = \"area\" or a matrix offset.")
+    density_lengthscale <- NULL                    # a field shared by all genes cancels in the multinomial
+  }
   has_d <- !is.null(density_lengthscale)
-  log_area <- if (family == "binomial") 0 else 2 * log(binned$grid$bin_size)
+  log_area <- if (family %in% c("binomial", "multinomial")) 0 else 2 * log(binned$grid$bin_size)
   if (offset == "smoothed_total") {
     g <- binned$grid
     og <- if (is.null(offset_genes)) binned$genes else intersect(offset_genes, binned$genes)
@@ -997,7 +1008,17 @@ fit_spatial_rff <- function(binned, n_factors = 3,
     Lfull <- if (has_d) cbind(p$sigma0, p$L) else p$L
     eta <- log_area + O_eta + matrix(p$alpha, N, J, byrow = TRUE) + Fm %*% t(Lfull)
     eta <- pmin(eta, 40)                   # guards against overflow in wild line-search steps
-    if (family == "binomial") {
+    if (family == "multinomial") {
+      # multinomial over genes given each bin's total = Poisson with a free bin effect, profiled out
+      W1 <- if (is.null(Wt)) 1 else Wt
+      bb <- log(pmax(rowSums(W1 * Y), 1e-300)) - log(pmax(rowSums(W1 * exp(eta)), 1e-300))
+      mu <- exp(eta + bb) * (rowSums(W1 * Y) > 0)
+      ll_el <- mu - Y * (eta + bb)
+      ll_el[Y == 0 & mu == 0] <- 0
+      R <- mu - Y
+      if (!is.null(Wt)) { ll_el <- Wt * ll_el; R <- Wt * R }
+      nll <- sum(ll_el) + lfy
+    } else if (family == "binomial") {
       pr <- stats::plogis(eta)
       ll_el <- Ntr * (pmax(eta, 0) + log1p(exp(-abs(eta)))) - Y * eta   # negative log-likelihood (without lchoose)
       R <- Ntr * pr - Y
@@ -1064,6 +1085,8 @@ fit_spatial_rff <- function(binned, n_factors = 3,
     eta_s <- log_area + O_eta + matrix(theta0[idx$alpha], N, J, byrow = TRUE)
     if (family == "binomial") {
       p_s <- stats::plogis(eta_s); mu_s <- Ntr * p_s; v_s <- pmax(mu_s * (1 - p_s), 1e-10)
+    } else if (family == "multinomial") {
+      mu_s <- exp(eta_s); mu_s <- mu_s * (rowSums(Y) / pmax(rowSums(mu_s), 1e-300)); v_s <- pmax(mu_s, 1e-10)
     } else { mu_s <- exp(eta_s); v_s <- mu_s }
     Rp <- (Y - mu_s) / sqrt(v_s)
     g <- binned$grid; h <- min(ell_init) / 2 / g$bin_size
@@ -1155,6 +1178,7 @@ fit_spatial_rff <- function(binned, n_factors = 3,
     program_strength = stats::setNames(sqrt(colSums(sweep(p$L, 2, colMeans(p$L))^2)), colnames(p$L)),
     amplitude = if (is.null(L_fix)) NULL else stats::setNames(fac_sd, colnames(p$L)),
     trials = if (family == "binomial") { dimnames(Ntr) <- list(NULL, colnames(Y)); Ntr } else NULL,
+    bin_total = if (family == "multinomial") rowSums(Y) else NULL,
     settings = list(n_factors = n_factors, lengthscales = lengthscales, density_lengthscale = density_lengthscale,
                     ard = ard, n_features = n_features, family = family, max_iter = max_iter, seed = seed,
                     factor_init = factor_init, basis = basis, learn_lengthscales = learn_lengthscales, l1 = l1,
@@ -1542,6 +1566,7 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
   .local_seed(seed)
   keep <- fit$in_tissue; N <- sum(keep)
   genes <- fit$genes
+  if (identical(st$family, "multinomial")) stop("rff_factor_test() does not support family = \"multinomial\"; use rff_program_test(null = \"shift\").")
   binom <- identical(st$family, "binomial")
   inv <- if (binom) stats::plogis else exp       # inverse link: probability (binomial) or mean
   la <- if (binom) 0 else 2 * log(fit$bin_size)
@@ -1799,7 +1824,7 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
   if (null == "shift") return(.rff_program_test_shift(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed, highpass,
                                                       robust = robust))
   if (identical(fit$offset, "smoothed_total")) stop("rff_program_test() supports offset = \"area\" or a matrix offset.")
-  if (identical(fit$family, "binomial")) stop("For family = \"binomial\" fits use null = \"shift\".")
+  if (fit$family %in% c("binomial", "multinomial")) stop("For family = \"binomial\" / \"multinomial\" fits use null = \"shift\".")
   .local_seed(seed)
   keep <- fit$in_tissue; g <- fit$grid; genes <- fit$genes
   h <- (if (is.null(bandwidth)) fit$bin_size else bandwidth) / g$bin_size
@@ -1881,11 +1906,13 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
   Fm <- fit$field_grid[keep, colnames(fit$L), drop = FALSE]
   Lc <- sweep(fit$L, 2, colMeans(fit$L))
   binom <- identical(fit$family, "binomial")
-  eta <- (if (binom) 0 else 2 * log(fit$bin_size)) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
+  eta <- (if (binom || identical(fit$family, "multinomial")) 0 else 2 * log(fit$bin_size)) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
     (if (fit$has_density) fit$sigma0 * fit$field_grid[keep, "density"] else 0) +
     Fm %*% t(fit$L - Lc)
   if (binom) {                                    # binomial: mean n p, variance n p (1 - p)
     pr <- stats::plogis(eta); mu0 <- fit$trials[, genes, drop = FALSE] * pr; v0 <- mu0 * (1 - pr)
+  } else if (identical(fit$family, "multinomial")) {  # multinomial: n_b softmax over genes
+    pr <- exp(eta - apply(eta, 1, max)); pr <- pr / rowSums(pr); mu0 <- rowSums(Y) * pr; v0 <- mu0 * (1 - pr)
   } else { mu0 <- exp(eta); v0 <- mu0 }
   # robust = TRUE: variance floor of 5% of each gene's mean per bin (an owner-type offset gives near-zero
   # means for genes of absent cell types, so a single spill-over transcript would get a Pearson residual
@@ -2077,6 +2104,25 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
 #' @param n_cores Cores for the surrogates (forked with
 #'   [parallel::mclapply()]; serial on Windows). Each surrogate data set has
 #'   its own seed, so results do not depend on `n_cores`.
+#' @param crossfit Discovery only. `TRUE`: cross-fitted version (as
+#'   `rff_program_test(crossfit = TRUE)`). The bins of every window are
+#'   split into two halves (checkerboard of `crossfit_block` blocks);
+#'   components are found on the pooled covariance of one half and their
+#'   pooled variance share is measured on the other half, both ways; the
+#'   same pipeline on gene-shift surrogates gives `p`; `excess` is the
+#'   weighted mean over windows of each window's held-out excess (with a
+#'   window-bootstrap interval, `excess_lower` / `excess_upper`); `call`
+#'   is the decision. Robust residual processing is used.
+#' @param crossfit_block Side of the checkerboard blocks (default 12 bins or
+#'   that of `control`).
+#' @param control Output of [rff_control_reference()] for negative-control
+#'   windows (implies `crossfit = TRUE`): `excess_vs_control` is the mean
+#'   held-out excess of the windows along each component direction minus the
+#'   mean excess of the control windows along the same direction, and
+#'   `p_control` compares it with `n_group_null` pseudo-target groups of
+#'   control windows (same number of windows, tested against the remaining
+#'   controls in the same way); `call` also requires `p_control <= alpha`.
+#' @param n_group_null Number of pseudo-target groups for `p_control`.
 #'
 #' @return Discovery: a data frame with one row per component (`component`,
 #'   `share`, `p`, `top_genes`) and attributes `loadings` (genes x
@@ -2106,7 +2152,8 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
 #' }
 rff_program_test_joint <- function(fits, binned, loadings = NULL, bandwidth = NULL, highpass = NULL,
                                    n_components = 6, n_boot = 99, sequential = TRUE, alpha = 0.05,
-                                   seed = 1, weights = c("equal", "bins"), n_cores = 1) {
+                                   seed = 1, weights = c("equal", "bins"), n_cores = 1,
+                                   crossfit = FALSE, crossfit_block = NULL, control = NULL, n_group_null = 499) {
   wnum <- NULL
   if (is.numeric(weights)) {
     if (length(weights) != length(fits) || any(!is.finite(weights)) || any(weights < 0) || !any(weights > 0))
@@ -2149,6 +2196,12 @@ rff_program_test_joint <- function(fits, binned, loadings = NULL, bandwidth = NU
       for (b in bad) res[[b]] <- one(b)
     }
     res
+  }
+  if (!is.null(control)) crossfit <- TRUE
+  if (crossfit) {
+    if (!is.null(loadings)) stop("`crossfit` / `control` are for discovery (loadings = NULL); use rff_transfer_test() for fixed loadings.")
+    return(.rff_program_test_joint_cf(fits, binned, bandwidth, highpass, n_components, n_boot, sequential, alpha,
+                                      seed, cw, wn, crossfit_block, control, n_group_null, n_cores))
   }
   if (is.null(loadings)) {
     n_components <- max(1L, min(as.integer(n_components), J))

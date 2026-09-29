@@ -155,3 +155,71 @@ test_that("rff_programs(lengthscale = \"profile\") reports profiled length scale
   rff_report(r, b, file = f, open = FALSE, export = FALSE)
   expect_true(grepl("Length-scale profiles", paste(readLines(f), collapse = "\n"), fixed = TRUE))
 })
+
+test_that("rff_reach() inverts the exponential-kernel length scale", {
+  ell <- vapply(c(10, 40, 160), function(l) .rff_kernel_ell(l, 8), 0)
+  expect_equal(ell / c(10, 40, 160), c(1.755, 1.724, 1.722), tolerance = 0.01)
+  expect_equal(rff_reach(ell, 8), c(10, 40, 160), tolerance = 0.01)
+  expect_equal(rff_reach(10, 8, kernel = "gaussian"), 10 / sqrt(2))
+  expect_true(is.na(rff_reach(1, 8)))
+})
+
+test_that("variational (ELBO) length scale and the MCMC reference", {
+  skip_on_cran()
+  b <- cal_sim(3, ell = 12, n = 30, own = 0.05)
+  f <- fit_spatial_rff(b, n_factors = 1, lengthscales = 8, basis = "grid", learn_lengthscales = FALSE,
+                       factor_init = "residual_pca", max_iter = 60)
+  v <- rff_lengthscale_vi(f, b, ls_grid = c(3, 6, 12, 24, 48))
+  expect_s3_class(v, "rff_ls_profile")
+  expect_true(all(c("lengthscale", "amplitude", "reach", "identifiable") %in% names(v$summary)))
+  expect_gt(v$summary$lengthscale, 6); expect_lt(v$summary$lengthscale, 24)
+  expect_gt(v$summary$gain, 0)
+  # numerical pieces: Lanczos log-determinant and conjugate gradients against dense algebra
+  bs <- cal_sim(2, n = 12); Kop <- .vi_kernel(bs$grid, bs$coords$in_tissue, 10); N <- Kop$N
+  K <- Kop$mv(diag(N)); d <- seq(0.2, 1.5, length.out = N); B <- diag(N) + diag(d) %*% K %*% diag(d)
+  set.seed(1); Z <- matrix(sample(c(-1, 1), N * 40, TRUE), N)
+  expect_equal(.vi_logdet(Kop$mv, d, Z), as.numeric(determinant(B)$modulus), tolerance = 0.1)
+  x <- .vi_cg(Kop$mv, d, matrix(seq_len(N), ncol = 1)); expect_lt(max(abs(B %*% x - seq_len(N))), 1e-3)
+  m <- rff_lengthscale_mcmc(f, b, n_iter = 300, burn = 100, ls_range = c(2, 100))
+  expect_equal(nrow(m$samples), 200)
+  expect_true(m$summary$lower <= m$summary$lengthscale && m$summary$lengthscale <= m$summary$upper)
+})
+
+test_that("multinomial family: gradient, fields and shift test", {
+  b <- cal_sim(4, ell = 8, amp = 1, n = 24, J = 10, prog = 1:4)
+  f <- fit_spatial_rff(b, n_factors = 2, family = "multinomial", basis = "grid", lengthscales = 8, learn_lengthscales = FALSE,
+                       ard = 5, max_iter = 40, factor_init = "residual_pca")
+  expect_false(f$has_density); expect_equal(length(f$bin_total), sum(b$coords$in_tissue))
+  old <- options(cohalu.rff_debug = TRUE); on.exit(options(old))
+  invisible(fit_spatial_rff(b, n_factors = 2, family = "multinomial", basis = "grid", lengthscales = 8, max_iter = 1))
+  d <- get(".rff_dbg", envir = globalenv()); rm(".rff_dbg", envir = globalenv())
+  set.seed(2); th <- d$theta0 + stats::rnorm(length(d$theta0), sd = 0.05)
+  ch <- c(d$idx$gamma[c(2, 50)], d$idx$L[1:3], d$idx$alpha[1:2])
+  num <- vapply(ch, function(i) { a <- th; a[i] <- a[i] + 1e-5; z <- th; z[i] <- z[i] - 1e-5
+    (d$objgrad(a)$value - d$objgrad(z)$value) / 2e-5 }, 0)
+  expect_equal(d$objgrad(th)$grad[ch], num, tolerance = 1e-4)
+  # a bin-wide multiplicative factor leaves the multinomial fit unchanged
+  b2 <- b; b2$counts <- b$counts * 2
+  f2 <- fit_spatial_rff(b2, n_factors = 2, family = "multinomial", basis = "grid", lengthscales = 8, learn_lengthscales = FALSE,
+                        ard = 5, max_iter = 40, factor_init = "residual_pca")
+  expect_equal(unname(f2$alpha - mean(f2$alpha)), unname(f$alpha - mean(f$alpha)), tolerance = 0.05)
+  pt <- rff_program_test(f, b, null = "shift", n_boot = 9, n_components = 2)
+  expect_equal(nrow(pt), 2)
+  expect_error(rff_factor_test(f, b, n_boot = 2), "multinomial")
+})
+
+test_that("rff_program_test_joint(): cross-fitted and control-calibrated group test", {
+  skip_on_cran()
+  mk <- function(seed, amp) { b <- cal_sim(seed, ell = 8, amp = amp, n = 30, J = 12, prog = 1:5)
+    list(b = b, fit = fit_spatial_rff(b, n_factors = 2, lengthscales = 8, basis = "grid", learn_lengthscales = FALSE,
+                                      factor_init = "residual_pca", ard = 20, max_iter = 30)) }
+  ctrl <- lapply(11:16, mk, amp = 0)
+  ref <- rff_control_reference(lapply(ctrl, `[[`, "fit"), lapply(ctrl, `[[`, "b"), n_boot = 9, n_components = 2)
+  expect_length(ref$M, 6)
+  tg <- lapply(21:23, mk, amp = 0.8)
+  jj <- rff_program_test_joint(lapply(tg, `[[`, "fit"), lapply(tg, `[[`, "b"), n_boot = 19, n_components = 2, control = ref, n_group_null = 99)
+  expect_true(all(c("share_heldout", "excess", "excess_vs_control", "p_control", "call") %in% names(jj)))
+  expect_true(jj$call[1])
+  expect_equal(dim(attr(jj, "window_excess")), c(3, 2))
+  expect_error(rff_program_test_joint(lapply(tg, `[[`, "fit"), lapply(tg, `[[`, "b"), loadings = diag(12)[, 1, drop = FALSE], crossfit = TRUE), "discovery")
+})

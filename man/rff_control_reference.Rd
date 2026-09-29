@@ -13,7 +13,8 @@ rff_control_reference(
   n_boot = 49,
   crossfit_block = NULL,
   seed = 1,
-  n_cores = 1
+  n_cores = 1,
+  keep_matrices = TRUE
 )
 }
 \arguments{
@@ -28,6 +29,10 @@ genes as the target fits).}
 \item{seed}{Random seed.}
 
 \item{n_cores}{Cores (windows are processed in parallel; forked).}
+
+\item{keep_matrices}{Also store each control window's cross-fitting
+matrices (a second pass of surrogates), needed by
+`rff_program_test_joint(control = )`.}
 }
 \value{
 An object of class `rff_control`: `excess` (controls x

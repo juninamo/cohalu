@@ -14,7 +14,7 @@ fit_spatial_rff(
   offset_genes = NULL,
   ard = 0,
   n_features = 64,
-  family = c("nb", "poisson", "binomial"),
+  family = c("nb", "poisson", "binomial", "multinomial"),
   max_iter = 500,
   seed = 1,
   verbose = FALSE,
@@ -100,7 +100,13 @@ each gene and bin out of all its transcripts there. Use it for
 fractions: with a log link and `log(trials)` as offset, a field shared
 by all genes cannot raise genes whose fraction is already near 1, so a
 spurious program with loadings that decrease with each gene's overall
-fraction appears (log-link saturation).}
+fraction appears (log-link saturation).
+`"multinomial"` models each bin's counts over the modelled genes
+given the bin's total (a free effect per bin, profiled out: Poisson
+with a bin intercept), so everything that scales all genes of a bin
+together - cellularity, transcriptome size, capture - drops out and no
+cellularity field is fitted. Supported by the gene-shift and
+cross-fitted program tests and the length-scale profiles.}
 
 \item{max_iter}{Maximum L-BFGS-B iterations.}
 

@@ -14,13 +14,22 @@
   keep <- fit$in_tissue; N <- sum(keep); J <- length(genes)
   binom <- identical(fit$family, "binomial")
   off <- if (is.null(fit$offset_matrix)) 0 else fit$offset_matrix[keep, genes, drop = FALSE]
-  eta <- (if (binom) 0 else 2 * log(fit$bin_size)) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
+  eta <- (if (binom || identical(fit$family, "multinomial")) 0 else 2 * log(fit$bin_size)) + off + matrix(fit$alpha[genes], N, J, byrow = TRUE) +
     (if (fit$has_density) fit$sigma0 * fit$field_grid[keep, "density"] else 0)
   if (length(factors)) {
     if (is.numeric(factors)) factors <- colnames(fit$L)[factors]
     eta <- eta + fit$field_grid[keep, factors, drop = FALSE] %*% t(fit$L[genes, factors, drop = FALSE])
   }
+  if (identical(fit$family, "multinomial")) {
+    # the bin effect of the full model (all genes, all factors), so that the result is a Poisson log mean
+    full <- .rff_linpred_raw(fit)
+    eta <- eta + log(pmax(fit$bin_total, 1e-300)) - log(rowSums(exp(full)))
+  }
   eta
+}
+.rff_linpred_raw <- function(fit) {
+  f <- fit; f$family <- "poisson"
+  .rff_linpred(f, colnames(fit$L)) - 2 * log(fit$bin_size)
 }
 
 # Log-likelihood of every entry (N x J) under a family, given the linear
@@ -150,6 +159,8 @@
 #'   hardly inform the field.
 #' @param seed Random seed (fold assignment, bootstrap).
 #' @param n_cores Cores for the refits (forked; serial on Windows).
+#' @param reach_kernel Decay kernel for the implied reach ([rff_reach()]):
+#'   `"exponential"` (default), `"gaussian"`, or `NULL` (no reach).
 #'
 #' @return An object of class `rff_ls_profile`: `summary` (one row per
 #'   profiled factor: `factor`, `lengthscale` (estimate), `lower`, `upper`
@@ -157,7 +168,11 @@
 #'   gain at the best grid length scale), `gain_se`, `heldout_dev_explained`
 #'   (share of the held-out deviance of the program genes explained by the
 #'   program), `at_boundary` (maximum at the edge of `ls_grid`), `n_genes`,
-#'   `top_genes`), `curves` (one row per factor and length scale: `gain`,
+#'   `top_genes`, `reach` / `reach_lower` / `reach_upper` (decay length
+#'   implied by the length scale, [rff_reach()]) and `identifiable` (the
+#'   length scale is at least 2 bins, at most a fifth of the smaller side of
+#'   the tissue, and not at the grid edge; otherwise the window or the bins
+#'   limit it and it is a bound, not an estimate)), `curves` (one row per factor and length scale: `gain`,
 #'   `se`, `delta_se` (standard error of the difference to the best length
 #'   scale), `within_1se`, `heldout_dev_explained`), `boot` (bootstrap
 #'   estimates) and `settings`.
@@ -182,7 +197,7 @@
 #' }
 rff_lengthscale_profile <- function(fit, binned, factors = NULL, ls_grid = 5 * 2^(0:6), folds = 4,
                                     holdout_size = NULL, max_iter = 150, n_boot = 200, boot_block = NULL,
-                                    gene_share = 0.95, seed = 1, n_cores = 1) {
+                                    gene_share = 0.95, seed = 1, n_cores = 1, reach_kernel = "exponential") {
   if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
   if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
   if (identical(fit$offset, "smoothed_total")) stop("rff_lengthscale_profile() needs a fit with offset = \"area\" or a matrix offset.")
@@ -192,7 +207,7 @@ rff_lengthscale_profile <- function(fit, binned, factors = NULL, ls_grid = 5 * 2
   keep <- fit$in_tissue; g <- fit$grid; N <- sum(keep)
   if (length(keep) != nrow(binned$coords)) stop("`binned` does not match the fit.")
   genes <- fit$genes; L <- fit$L
-  fam <- fit$family
+  fam <- fit$family; if (fam == "multinomial") fam <- "poisson"   # bin effects of the full fit are in the offset
   strength <- sqrt(colSums(L^2)); pstr <- sqrt(colSums(sweep(L, 2, colMeans(L))^2))
   uni <- 1 - pstr^2 / pmax(strength^2, 1e-12)
   if (is.null(factors)) factors <- colnames(L)[pstr >= 0.1 * max(pstr) & uni <= 0.5]
@@ -203,6 +218,8 @@ rff_lengthscale_profile <- function(fit, binned, factors = NULL, ls_grid = 5 * 2
   hs <- if (is.null(holdout_size)) 3 * g$bin_size else holdout_size
   unit <- .rff_units(g, keep, hs)
   fold <- sample(rep_len(seq_len(folds), max(unit)))[unit]
+  cxy <- binned$coords[keep, c("x", "y")]
+  extent <- min(diff(range(cxy$x)), diff(range(cxy$y))) + g$bin_size
   bb <- if (is.null(boot_block)) 8 * g$bin_size else boot_block
   bunit <- .rff_units(g, keep, bb)
   Yall <- as.matrix(binned$counts[keep, genes, drop = FALSE])
@@ -267,10 +284,18 @@ rff_lengthscale_profile <- function(fit, binned, factors = NULL, ls_grid = 5 * 2
                             grid_best = ls_grid[ib], gain = gain[ib], gain_se = se[ib],
                             heldout_dev_explained = dexp[ib], at_boundary = ib %in% c(1, length(ls_grid)),
                             n_genes = length(gsel[[k]]),
+                            reach = NA_real_, reach_lower = NA_real_, reach_upper = NA_real_,
+                            identifiable = est >= 2 * g$bin_size && est <= extent / 5 && !(ib %in% c(1, length(ls_grid))),
                             top_genes = paste(sprintf("%s (%+.2f)", genes[o], L[o, k]), collapse = ", "), row.names = NULL)
     boots[[k]] <- bs_est
   }
-  structure(list(summary = do.call(rbind, summ), curves = do.call(rbind, curves), boot = boots,
+  sm <- do.call(rbind, summ)
+  if (!is.null(reach_kernel)) {
+    sm$reach <- rff_reach(sm$lengthscale, g$bin_size, reach_kernel)
+    sm$reach_lower <- rff_reach(sm$lower, g$bin_size, reach_kernel)
+    sm$reach_upper <- rff_reach(sm$upper, g$bin_size, reach_kernel)
+  }
+  structure(list(summary = sm, curves = do.call(rbind, curves), boot = boots,
                  settings = list(ls_grid = ls_grid, folds = folds, holdout_size = hs, max_iter = max_iter,
                                  n_boot = n_boot, boot_block = bb, gene_share = gene_share, seed = seed)),
             class = "rff_ls_profile")
@@ -282,8 +307,9 @@ print.rff_ls_profile <- function(x, ...) {
   cat(sprintf("<rff_ls_profile> %d program(s); grid %s; %d folds, held-out units %g\n", nrow(s),
               paste(signif(x$settings$ls_grid, 3), collapse = "/"), x$settings$folds, x$settings$holdout_size))
   for (i in seq_len(nrow(s)))
-    cat(sprintf("  %-8s length scale %.3g (95%% CI %.3g-%.3g)%s | held-out gain %.1f (se %.1f), dev. explained %.2f%% | %s\n",
+    cat(sprintf("  %-8s length scale %.3g (95%% CI %.3g-%.3g)%s%s | held-out gain %.1f (se %.1f), dev. explained %.2f%% | %s\n",
                 s$factor[i], s$lengthscale[i], s$lower[i], s$upper[i], if (s$at_boundary[i]) " [grid edge]" else "",
+                if (!is.null(s$reach) && is.finite(s$reach[i])) sprintf(", reach %.3g%s", s$reach[i], if (isTRUE(s$identifiable[i])) "" else " (not identifiable)") else "",
                 s$gain[i], s$gain_se[i], 100 * s$heldout_dev_explained[i], s$top_genes[i]))
   invisible(x)
 }
@@ -402,6 +428,9 @@ print.rff_ls_profile <- function(x, ...) {
 #'   [rff_program_test()]; use the same values for the target test.
 #' @param seed Random seed.
 #' @param n_cores Cores (windows are processed in parallel; forked).
+#' @param keep_matrices Also store each control window's cross-fitting
+#'   matrices (a second pass of surrogates), needed by
+#'   `rff_program_test_joint(control = )`.
 #'
 #' @return An object of class `rff_control`: `excess` (controls x
 #'   components), `share`, `null_mean`, per-window covariances `C` and
@@ -414,7 +443,7 @@ print.rff_ls_profile <- function(x, ...) {
 #' @seealso [rff_program_test()]
 #' @export
 rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NULL, n_components = 6, n_boot = 49,
-                                  crossfit_block = NULL, seed = 1, n_cores = 1) {
+                                  crossfit_block = NULL, seed = 1, n_cores = 1, keep_matrices = TRUE) {
   if (inherits(fits, "spatial_rff_fit")) fits <- list(fits)
   if (inherits(binned, "binned_transcripts")) binned <- list(binned)
   if (length(fits) < 3 || length(fits) != length(binned)) stop("`fits` and `binned` must be lists of >= 3 control windows of the same length.")
@@ -425,6 +454,12 @@ rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NUL
   res <- .rff_mclapply(seq_along(fits), function(i) {
     set.seed(seeds[i])
     w <- .rff_cf_window(fits[[i]], binned[[i]], bandwidth, highpass, n_components, n_boot, crossfit_block, n_boot_ci = 0, keep_cov = TRUE)
+    if (keep_matrices) {                                  # for joint (group) tests
+      hv <- .rff_halves(fits[[i]]$grid, fits[[i]]$in_tissue, w$block,
+                        margin = ceiling(1.5 * (if (is.null(bandwidth)) fits[[i]]$bin_size else bandwidth) / fits[[i]]$bin_size))
+      w$M <- .rff_cf_window_mats(fits[[i]], binned[[i]], bandwidth, highpass, n_boot, w$block)$m
+      w$M$C <- NULL; w$M$Cbar <- NULL
+    }
     w$R <- NULL; w$excess_boot <- NULL; w
   }, n_cores)
   k <- length(res[[1]]$share)
@@ -436,6 +471,7 @@ rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NUL
                         null_mean = t(vapply(res, `[[`, numeric(k), "null_mean")), p_heldout = ph,
                         C = lapply(res, `[[`, "C"), Cbar = lapply(res, `[[`, "Cbar"), V = lapply(res, `[[`, "V"),
                         N = vapply(res, `[[`, 1, "N"), genes = genes,
+                        M = if (keep_matrices) lapply(res, `[[`, "M") else NULL,
                         settings = list(bandwidth = bandwidth, highpass = highpass, n_components = k, n_boot = n_boot,
                                         crossfit_block = res[[1]]$block)),
                    class = "rff_control")
@@ -449,6 +485,7 @@ rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NUL
   r$excess <- ref$excess[keep, , drop = FALSE]; r$share <- ref$share[keep, , drop = FALSE]
   r$null_mean <- ref$null_mean[keep, , drop = FALSE]; r$p_heldout <- ref$p_heldout[keep, , drop = FALSE]
   r$C <- ref$C[keep]; r$Cbar <- ref$Cbar[keep]; r$V <- ref$V[keep]; r$N <- ref$N[keep]
+  if (!is.null(ref$M)) r$M <- ref$M[keep]
   r$loo <- .rff_control_loo(r)
   r
 }
@@ -662,7 +699,7 @@ rff_transfer_test <- function(loadings, fits, binned, statistic = c("score", "he
 # genes of the fit) over the null part of the fit (offset, intercepts,
 # cellularity field; the fit's own factors are not used).
 .rff_fixed_gain <- function(fit, binned, v, ell, folds, max_iter, seed) {
-  keep <- fit$in_tissue; g <- fit$grid; N <- sum(keep); fam <- fit$family
+  keep <- fit$in_tissue; g <- fit$grid; N <- sum(keep); fam <- fit$family; if (fam == "multinomial") fam <- "poisson"
   gk <- fit$genes[v != 0]; if (length(gk) < 2) return(0)
   la <- if (fam == "binomial") 0 else 2 * log(g$bin_size)
   off <- .rff_linpred(fit, NULL, genes = gk) - la
@@ -684,4 +721,181 @@ rff_transfer_test <- function(loadings, fits, binned, statistic = c("score", "he
     tot <- tot + ll[2] - ll[1]
   }
   tot
+}
+
+# ---- cross-fitted statistics as J x J matrices (joint / group tests) ----------
+
+# Per-window matrices of the cross-fitted statistic: covariances of the
+# processed residuals on the discovery halves (CA, CB) and on the evaluation
+# halves (EA, EB), and the surrogate means of the evaluation-half covariances
+# (SA, SB). For a set of windows with weights c_w, components found on
+# sum_w c_w CA_w are evaluated on sum_w c_w EB_w (and vice versa); everything
+# a group statistic needs is in these matrices.
+.rff_cf_mats_one <- function(R, hv) {
+  cp <- function(i) crossprod(R[i, , drop = FALSE])
+  list(CA = cp(hv$A), CB = cp(hv$B), EA = cp(hv$evalA), EB = cp(hv$evalB))
+}
+
+.rff_cf_group_share <- function(M, cw, k) {
+  pool <- function(nm) Reduce(`+`, Map(function(m, c) m[[nm]] * c, M, cw))
+  CA <- pool("CA"); CB <- pool("CB"); EA <- pool("EA"); EB <- pool("EB")
+  VA <- eigen(CA, symmetric = TRUE)$vectors[, seq_len(k), drop = FALSE]
+  VB <- eigen(CB, symmetric = TRUE)$vectors[, seq_len(k), drop = FALSE]
+  sAB <- colSums(VA * (EB %*% VA)) / sum(diag(EB)); sBA <- colSums(VB * (EA %*% VB)) / sum(diag(EA))
+  list(share = (sAB + sBA) / 2, VA = VA, VB = VB)
+}
+
+# held-out excess of each window along the group's directions (found on the
+# other half), relative to its surrogate mean
+.rff_cf_window_excess <- function(m, VA, VB) {
+  eB <- colSums(VA * (m$EB %*% VA)) / pmax(colSums(VA * (m$SB %*% VA)), 1e-12)
+  eA <- colSums(VB * (m$EA %*% VB)) / pmax(colSums(VB * (m$SA %*% VB)), 1e-12)
+  (eA + eB) / 2 - 1
+}
+
+# direction excess of full control windows along directions V (columns)
+.rff_ctrl_excess <- function(ref, V, idx = seq_along(ref$C))
+  t(vapply(idx, function(i) colSums(V * (ref$C[[i]] %*% V)) / pmax(colSums(V * (ref$Cbar[[i]] %*% V)), 1e-12) - 1, numeric(ncol(V))))
+
+# matrices of one window: observed and surrogate means (surrogate draws are
+# also returned as pooled-ready lists when keep_draws = TRUE)
+.rff_cf_window_mats <- function(fit, binned, bandwidth, highpass, n_boot, block, keep_draws = FALSE) {
+  sp <- .rff_shift_prep(fit, binned, bandwidth, highpass, robust = TRUE)
+  h <- (if (is.null(bandwidth)) fit$bin_size else bandwidth) / fit$bin_size
+  if (is.null(block)) block <- 12 * fit$bin_size
+  hv <- .rff_halves(fit$grid, fit$in_tissue, block, margin = ceiling(1.5 * h))
+  if (sum(hv$evalA) < 20 || sum(hv$evalB) < 20) stop("Too few bins for cross-fitting; use a smaller `crossfit_block`.")
+  R <- sp$process(sp$Y, sp$mu, sp$v)
+  m <- .rff_cf_mats_one(R, hv); m$N <- sp$N
+  m$C <- crossprod(R) / sum(R^2)
+  SA <- SB <- 0; Cbar <- 0; draws <- vector("list", if (keep_draws) n_boot else 0)
+  for (b in seq_len(n_boot)) {
+    z <- sp$surrogate(sp$mu, sp$v); Rz <- sp$process(z$Y, z$mu, z$v)
+    mz <- .rff_cf_mats_one(Rz, hv)
+    SA <- SA + mz$EA / n_boot; SB <- SB + mz$EB / n_boot; Cbar <- Cbar + crossprod(Rz) / sum(Rz^2) / n_boot
+    if (keep_draws) draws[[b]] <- mz
+  }
+  m$SA <- SA; m$SB <- SB; m$Cbar <- Cbar; m$block <- block
+  list(m = m, draws = draws)
+}
+
+# Internal: rff_program_test_joint(crossfit = TRUE [, control]).
+.rff_program_test_joint_cf <- function(fits, binned, bandwidth, highpass, n_components, n_boot, sequential, alpha,
+                                       seed, cw, wn, crossfit_block, control, n_group_null, n_cores) {
+  genes <- fits[[1]]$genes; J <- length(genes)
+  k <- max(1L, min(as.integer(n_components), J))
+  if (!is.null(control)) {
+    if (!inherits(control, "rff_control")) stop("`control` must come from rff_control_reference().")
+    if (!identical(control$genes, genes)) stop("`control` was built for other genes.")
+    if (is.null(control$M)) stop("`control` lacks the cross-fitting matrices; rebuild it with the current rff_control_reference().")
+    if (is.null(crossfit_block)) crossfit_block <- control$settings$crossfit_block
+  }
+  .local_seed(seed); seeds <- sample.int(.Machine$integer.max, length(fits))
+  W <- .rff_mclapply(seq_along(fits), function(i) { set.seed(seeds[i])
+    .rff_cf_window_mats(fits[[i]], binned[[i]], bandwidth, highpass, n_boot, crossfit_block, keep_draws = TRUE) }, n_cores)
+  M <- lapply(W, `[[`, "m")
+  cwn <- cw / sum(cw)
+  obs <- .rff_cf_group_share(M, cwn, k)
+  nul <- t(vapply(seq_len(n_boot), function(b) .rff_cf_group_share(lapply(W, function(w) w$draws[[b]]), cwn, k)$share, numeric(k)))
+  if (k == 1) nul <- matrix(nul, ncol = 1)
+  rm(W)
+  mn <- colMeans(nul)
+  p <- vapply(seq_len(k), function(j) (1 + sum(nul[, j] >= obs$share[j])) / (n_boot + 1), 0)
+  if (sequential) p <- cummax(p)
+  # per-window held-out excess along the group's directions; window bootstrap for the interval
+  E <- t(vapply(M, .rff_cf_window_excess, numeric(k), VA = obs$VA, VB = obs$VB)); if (k == 1) E <- matrix(E, ncol = 1)
+  dimnames(E) <- list(wn, paste0("PC", seq_len(k)))
+  ex <- colSums(E * cwn)
+  bt <- vapply(seq_len(200), function(b) { i <- sample.int(nrow(E), replace = TRUE); colSums(E[i, , drop = FALSE] * cwn[i]) / sum(cwn[i]) }, numeric(k))
+  bt <- matrix(bt, nrow = k)
+  # full-data pooled directions for display
+  Cfull <- Reduce(`+`, Map(function(m, c) m$C * c, M, cwn)); ev <- eigen(Cfull, symmetric = TRUE)
+  V <- ev$vectors[, seq_len(k), drop = FALSE]; sg <- apply(V, 2, function(v) sign(v[which.max(abs(v))])); V <- sweep(V, 2, sg, "*")
+  top <- vapply(seq_len(k), function(j) { o <- order(-abs(V[, j]))[seq_len(min(5, J))]
+    paste(sprintf("%s (%+.2f)", genes[o], V[o, j]), collapse = ", ") }, "")
+  out <- data.frame(component = paste0("PC", seq_len(k)), share = (ev$values / sum(ev$values))[seq_len(k)], p = p, top_genes = top,
+                    share_heldout = obs$share, null_heldout = mn, excess = ex,
+                    excess_lower = apply(bt, 1, stats::quantile, 0.025), excess_upper = apply(bt, 1, stats::quantile, 0.975),
+                    row.names = NULL)
+  call <- out$p <= alpha
+  if (!is.null(control)) {
+    # group statistic: mean held-out excess of the target windows along the group's directions minus the mean
+    # excess of the control windows along the same directions; null from pseudo-target groups of controls
+    stat_of <- function(Eg, dirs, idx_ctrl) colMeans(Eg) - colMeans(.rff_ctrl_excess(control, dirs, idx_ctrl))
+    Tobs <- stat_of(E, (obs$VA + obs$VB) / 2, seq_along(control$C))
+    nc <- length(control$M); m <- min(length(fits), nc - 3)
+    if (m < 1) stop("Too few control windows for the group null.")
+    Tnull <- t(vapply(seq_len(n_group_null), function(b) {
+      g <- sample.int(nc, m); Mg <- control$M[g]
+      og <- .rff_cf_group_share(Mg, rep(1 / m, m), k)
+      Eg <- t(vapply(Mg, .rff_cf_window_excess, numeric(k), VA = og$VA, VB = og$VB)); if (k == 1) Eg <- matrix(Eg, ncol = 1)
+      stat_of(Eg, (og$VA + og$VB) / 2, setdiff(seq_len(nc), g))
+    }, numeric(k))); if (k == 1) Tnull <- matrix(Tnull, ncol = 1)
+    out$excess_vs_control <- Tobs
+    out$p_control <- vapply(seq_len(k), function(j) (1 + sum(Tnull[, j] >= Tobs[j])) / (n_group_null + 1), 0)
+    call <- call & out$p_control <= alpha
+    attr(out, "control_null") <- Tnull
+  }
+  if (sequential) call <- cumprod(call) == 1
+  out$call <- call
+  dimnames(V) <- list(genes, out$component)
+  attr(out, "loadings") <- V; attr(out, "window_excess") <- E
+  attr(out, "scores") <- NULL
+  attr(out, "null_shares") <- lapply(seq_len(k), function(j) nul[, j]); attr(out, "null") <- "shift_joint_crossfit"
+  attr(out, "weights") <- stats::setNames(cw, wn)
+  out
+}
+
+# ---- from length scale to reach ----------------------------------------------
+
+# RBF length scale matching (at half correlation) the bin-averaged field of
+# point sources with kernel exp(-d / lambda) (shot noise; its correlation is
+# the self-convolution of the kernel).
+.rff_kernel_ell <- function(lambda, bin) {
+  L <- 12 * lambda + 4 * bin
+  s <- max(min(lambda, bin) / 4, 2 * L / 1024); n <- 2^ceiling(log2(2 * L / s))
+  x <- (0:(n - 1)) * s; x <- ifelse(x > n * s / 2, x - n * s, x)
+  k <- exp(-sqrt(outer(x^2, x^2, "+")) / lambda)
+  box <- outer(abs(x) < bin / 2, abs(x) < bin / 2) * 1
+  if (sum(box) == 0) box[1, 1] <- 1
+  A <- Re(stats::fft(abs(stats::fft(k) * stats::fft(box))^2, inverse = TRUE))
+  pr <- A[1, seq_len(n / 2)] / A[1, 1]; xs <- x[seq_len(n / 2)]
+  i <- which(pr < 0.5)[1]
+  r12 <- stats::approx(pr[(i - 1):i], xs[(i - 1):i], 0.5)$y
+  r12 / sqrt(2 * log(2))
+}
+
+#' Reach (decay length) implied by a profiled length scale
+#'
+#' **Experimental.** The length scale `ell` of [rff_lengthscale_profile()]
+#' describes a Gaussian (RBF) correlation. If a program is a response to
+#' point sources (producer cells) that decays as \eqn{e^{-d/\lambda}}, the
+#' response map is shot noise whose correlation is the self-convolution of
+#' that kernel, which is matched at half correlation by an RBF length scale
+#' of about \eqn{1.72\lambda} (more for `lambda` near the bin size, where
+#' bin averaging adds to the width). `rff_reach()` inverts this relation.
+#' The result is a reach under that model only, and it is only identified
+#' when the length scale is well inside the window (see
+#' `rff_lengthscale_profile()`'s `identifiable` column).
+#'
+#' @param ell Length scale(s) (coordinate units).
+#' @param bin_size Bin size used for the fit.
+#' @param kernel `"exponential"` (decay \eqn{e^{-d/\lambda}}) or `"gaussian"`
+#'   (decay \eqn{e^{-d^2/2\lambda^2}}: its shot noise has RBF length scale
+#'   \eqn{\sqrt{2}\lambda}, bin averaging ignored).
+#' @return Numeric vector of reaches (`NA` where `ell` is too small to be
+#'   produced by any reach at this bin size).
+#' @export
+#' @examples
+#' rff_reach(c(20, 70, 140, 550), bin_size = 8)
+rff_reach <- function(ell, bin_size, kernel = c("exponential", "gaussian")) {
+  kernel <- match.arg(kernel)
+  if (kernel == "gaussian") return(ell / sqrt(2))
+  lo <- .rff_kernel_ell(bin_size / 50, bin_size)
+  vapply(ell, function(e) {
+    if (!is.finite(e) || e <= lo) return(NA_real_)
+    f <- function(ll) .rff_kernel_ell(exp(ll), bin_size) - e
+    up <- log(max(e, bin_size))
+    exp(stats::uniroot(f, c(log(bin_size / 50), up), tol = 1e-3)$root)
+  }, 0)
 }

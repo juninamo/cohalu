@@ -16,7 +16,8 @@ rff_lengthscale_profile(
   boot_block = NULL,
   gene_share = 0.95,
   seed = 1,
-  n_cores = 1
+  n_cores = 1,
+  reach_kernel = "exponential"
 )
 }
 \arguments{
@@ -52,6 +53,9 @@ hardly inform the field.}
 \item{seed}{Random seed (fold assignment, bootstrap).}
 
 \item{n_cores}{Cores for the refits (forked; serial on Windows).}
+
+\item{reach_kernel}{Decay kernel for the implied reach ([rff_reach()]):
+`"exponential"` (default), `"gaussian"`, or `NULL` (no reach).}
 }
 \value{
 An object of class `rff_ls_profile`: `summary` (one row per
@@ -60,7 +64,11 @@ An object of class `rff_ls_profile`: `summary` (one row per
   gain at the best grid length scale), `gain_se`, `heldout_dev_explained`
   (share of the held-out deviance of the program genes explained by the
   program), `at_boundary` (maximum at the edge of `ls_grid`), `n_genes`,
-  `top_genes`), `curves` (one row per factor and length scale: `gain`,
+  `top_genes`, `reach` / `reach_lower` / `reach_upper` (decay length
+  implied by the length scale, [rff_reach()]) and `identifiable` (the
+  length scale is at least 2 bins, at most a fifth of the smaller side of
+  the tissue, and not at the grid edge; otherwise the window or the bins
+  limit it and it is a bound, not an estimate)), `curves` (one row per factor and length scale: `gain`,
   `se`, `delta_se` (standard error of the difference to the best length
   scale), `within_1se`, `heldout_dev_explained`), `boot` (bootstrap
   estimates) and `settings`.
