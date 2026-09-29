@@ -300,3 +300,32 @@ test_that("rff_report() shows one window of a joint fit with the joint test", {
   expect_true(grepl("shared loadings over 2 windows", h, fixed = TRUE))
   expect_error(rff_report(jf, bs, window = "nope", file = f, export = FALSE, open = FALSE), "window")
 })
+
+test_that("rff_expected_offset(neighbour_bandwidth =) and rff_offset(gene_covariates =)", {
+  tx <- simulate_transcripts(size = 80, rate = 0.03, n_genes_per_set = 3, seed = 13)
+  tx$type <- ifelse(tx$x < 40, "left", "right")
+  b <- bin_transcripts(tx, bin_size = 8)
+  b2 <- b; b2$genes <- b$genes[1:3]; b2$counts <- b$counts[, 1:3]
+  off <- rff_expected_offset(b2, tx, neighbour_bandwidth = 8)
+  nb <- attr(off, "neighbour")
+  expect_equal(dim(nb), dim(off)); expect_true(all(is.finite(nb)))
+  expect_null(attr(rff_expected_offset(b2, tx), "neighbour"))
+  expect_error(rff_expected_offset(b2, tx, neighbour_bandwidth = -1), "positive")
+  gc <- nb - off
+  o1 <- rff_offset(b2, base = off, gene_covariates = gc)
+  o2 <- rff_offset(b2, base = off, gene_covariates = list(spill = gc))
+  expect_equal(o1, o2)
+  expect_equal(dim(o1), c(sum(b2$coords$in_tissue), 3))
+  # a gene-specific covariate is used gene by gene: permuting its columns changes the result
+  expect_false(isTRUE(all.equal(o1, rff_offset(b2, base = off, gene_covariates = gc[, c(2, 3, 1)]))))
+  # a constant gene covariate is ignored
+  expect_equal(rff_offset(b2, base = off, gene_covariates = gc * 0), rff_offset(b2, base = off))
+  expect_error(rff_offset(b2, base = off, gene_covariates = gc[-1, ]), "one row")
+  # the covariate is absorbed: counts driven by it leave no residual dependence
+  set.seed(1); keep <- b2$coords$in_tissue
+  z <- rnorm(sum(keep)); M <- matrix(z, sum(keep), 3) * c(1, 0.5, 0)[col(matrix(0, sum(keep), 3))]
+  mu <- exp(2 * log(8) + off[keep, ] + 0.8 * M); b3 <- b2
+  cnt <- matrix(0, nrow(b2$coords), 3); cnt[keep, ] <- rpois(length(mu), mu); b3$counts <- Matrix::Matrix(cnt, sparse = TRUE)
+  o3 <- rff_offset(b3, base = off[keep, ], gene_covariates = M)
+  expect_gt(cor(o3[, 1] - off[keep, 1], z), 0.9)
+})
