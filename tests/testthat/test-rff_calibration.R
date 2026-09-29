@@ -24,7 +24,7 @@ test_that("rff_lengthscale_profile() ranks length scales and returns curves", {
     b <- cal_sim(2, ell = ell, n = 36, own = 0.1)
     fit <- fit_spatial_rff(b, n_factors = 1, lengthscales = 8, basis = "grid", learn_lengthscales = FALSE,
                            factor_init = "residual_pca", max_iter = 60)
-    pr <- rff_lengthscale_profile(fit, b, ls_grid = c(3, 6, 12, 24, 48), folds = 3, max_iter = 60, n_boot = 30)
+    pr <- rff_lengthscale_profile(fit, b, ls_grid = c(3, 6, 12, 24, 48), folds = 3, holdout_size = 5, max_iter = 60, n_boot = 30)
     expect_s3_class(pr, "rff_ls_profile")
     expect_equal(nrow(pr$curves), 5)
     expect_true(all(c("lengthscale", "lower", "upper", "gain", "heldout_dev_explained", "at_boundary") %in% names(pr$summary)))

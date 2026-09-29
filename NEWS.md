@@ -1,5 +1,99 @@
 # cohalu 0.99.3
 
+## Residual RFLVM: method fixes after the September 2026 evaluations
+
+* **Length scales are now estimated by profiling.** `fit_spatial_rff()`
+  never estimated length scales: learned length scales were held near their
+  initial values by a log-normal prior centred there, and the MAP objective
+  (which does not integrate over the field weights) always favoured the
+  smallest length scale. New `rff_lengthscale_profile()` profiles each
+  program over a grid of fixed length scales (default 5-320): everything
+  else in the fit is held fixed, the program's loadings are fixed, its field
+  is refitted with a quarter of the bins left out, and the held-out
+  log-likelihood gain over the model without the program is the profile;
+  the maximum (parabola in log length scale) is the estimate, with a spatial
+  block-bootstrap interval and per-length-scale curves.
+  `fit_spatial_rff(lengthscales = "profile", ls_grid = , profile = )` fits,
+  profiles and refits (new argument `start` keeps the factors); in
+  `rff_programs(lengthscale = "profile")` the programs table reports the
+  profiled length scale with its interval. Validation (6-gene response
+  programs spiked into a real 0.8 x 0.8 mm RA Xenium region around hidden
+  producer cells, decaying as exp(-d / lambda), lambda = 10-320 um, 2 seeds):
+  Spearman(estimate, lambda) = 0.89 with the default held-out units of 3 x 3
+  bins (0.78 with single bins), but the estimates are compressed (about
+  25 um at lambda = 10, 40-70 um at lambda = 320) - they rank reaches, they
+  do not measure them. A co-localised decoy program with a 4x different
+  reach was always recovered as a separate program, but its length scale was
+  ordered correctly in only 4/6 runs. The old learned length scales stayed at
+  their initial values (10 -> 10.2, 30 -> 33, 90 -> 83) and the MAP
+  objective was minimal at 5-10 um in 21/21 runs.
+* **Calibrated program test for real tissue.** On real tissue the
+  gene-shift null of `rff_program_test()` is rejected by almost any shared
+  residual structure (spill-over, mixing, cellularity, cell-state
+  heterogeneity): on a real RA Xenium section it called the first component
+  in 42% of 24 non-TLS tiles and 95% of 22 TLS windows, whereas gene-shifted
+  data were called in 0/46 - the null is calibrated, but it is not the
+  question. New options of `rff_program_test(null = "shift")`:
+  `crossfit = TRUE` (components found on one half of the bins, their
+  variance share measured on the other half; `excess` = held-out share /
+  surrogate mean - 1 with a block-bootstrap interval), `control =` a
+  negative-control reference from `rff_control_reference()` (windows where no
+  program of interest is expected; `control_stat = "direction"`: is the
+  component direction more active here than in the controls, calibrated by
+  treating each control window the same way) and `min_effect` (effect-size
+  threshold on the lower interval bound); the decision is the new `call`
+  column, used by `rff_programs()` and shown in `rff_report()`. Real RA
+  section (leave-one-out over 24 non-TLS tiles): first component called in
+  15/24 tiles by the cross-fitted test alone, 0/24 with the direction-wise
+  control comparison (1/24 rank-wise); 6-gene programs planted into the
+  tiles were found in 0% / 33% / 58% of tiles at log-amplitude 0.5 / 0.75 /
+  1. The 22 TLS windows were not called against the non-TLS tiles: their
+  leading residual structure is not stronger than elsewhere in the tissue.
+  Simulated tissues with spill-over, cellularity, capture and gene-own
+  fields: the old test called 55% of tissues without a program, the
+  cross-fitted test 30%, with 20 control tissues 0%; power 40% / 95% /
+  100% at program amplitude 0.3 / 0.5 / 0.8. The old behaviour is the
+  default (`crossfit = FALSE`).
+* `rff_program_test(robust = TRUE)` (always used by the cross-fitted test):
+  variance floor for Pearson residuals (owner-type offsets give near-zero
+  means for genes of absent cell types, so single spill-over transcripts
+  dominated) and surrogate sources outside the tissue are refilled by further
+  random transformations instead of zeros (zeros created a strong shared
+  component in the surrogates of windows with ragged tissue masks, making
+  the test very conservative there: surrogate first-component share up to 5x
+  the observed one).
+* **Transfer test for fixed loadings.** New `rff_transfer_test()`: is a
+  program learned elsewhere active in new tissue? Score statistic (share of
+  the target's processed residual variance along the program direction) or
+  held-out likelihood gain, against a permuted-loading null (loadings
+  permuted among genes within abundance strata; the target data and every
+  gene's own spatial structure are untouched). Simulation with realistic
+  nuisance (20 targets each): a learned program was detected in 20/20
+  targets that carry it, 0/20 without it, 0/20 with a different program;
+  permuted loadings 2/60. The fixed-loading field amplitude used before
+  called 3/20 targets without the program. Real data: TLS programs learned
+  in one patient fold transferred to 86% of window-program pairs in 22 TLS
+  windows of a held-out patient (60% in non-TLS tiles, mostly cell-type
+  programs); permuted and random loadings 1.5-8%. Micromass programs
+  transferred to an organoid (EC program p = 0.001, myofibroblast p =
+  0.03) but not to in vivo AMP synovium. The held-out statistic was run on
+  only 6 targets and rejected 2/2 targets without the program - not
+  validated; use the default `"score"`.
+* **Fractions (e.g. nuclear transcripts per gene and bin): `family =
+  "binomial"`** in `fit_spatial_rff()` (new argument `trials`; logit link, no
+  bin area), supported by `rff_program_test(null = "shift")`,
+  `rff_factor_test()`, `rff_lengthscale_profile()` and the transfer test.
+  With a log link and `log(trials x fraction)` as offset, a field shared by
+  all genes cannot raise genes whose fraction is near 1, so a spurious
+  program with loadings that decrease with each gene's overall fraction
+  appears (log-link saturation). Simulation (shared nuclear-area field, no
+  program): log link called a component in 10/10 tissues with loading
+  correlation -0.82 with the genes' nuclear fraction; binomial 1/10, r =
+  -0.01; a planted program was found by both (10/10). On real RA windows the
+  correlation of the leading component with nuclear fraction fell only
+  partly (max |r| 0.21-0.58 -> 0.13-0.46), so nuclear-retention programs
+  on real data remain confounded with other gene properties.
+
 ## Package renamed
 
 * The package is renamed from `spatialCooccur` to `cohalu` (COHALU:

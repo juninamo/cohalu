@@ -17,7 +17,8 @@ rff_transfer_test(
   folds = 4,
   max_iter = 150,
   seed = 1,
-  n_cores = 1
+  n_cores = 1,
+  scale = c("log", "residual")
 )
 }
 \arguments{
@@ -48,6 +49,11 @@ folds and iterations for `"heldout"`.}
 \item{seed}{Random seed.}
 
 \item{n_cores}{Cores for `"heldout"` refits.}
+
+\item{scale}{`"log"` (default): `loadings` are log-scale effects (as in
+`fit$L`); `"residual"`: they are directions of the processed residuals,
+e.g. the `loadings` attribute of [rff_program_test()] or
+[rff_program_test_joint()].}
 }
 \value{
 A data frame with one row per program: `program`, `n_genes`

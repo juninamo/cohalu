@@ -14,7 +14,7 @@ fit_spatial_rff(
   offset_genes = NULL,
   ard = 0,
   n_features = 64,
-  family = c("nb", "poisson"),
+  family = c("nb", "poisson", "binomial"),
   max_iter = 500,
   seed = 1,
   verbose = FALSE,

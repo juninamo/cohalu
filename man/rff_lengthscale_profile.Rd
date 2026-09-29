@@ -34,7 +34,9 @@ share <= 0.5).}
 \item{folds}{Number of held-out groups.}
 
 \item{holdout_size}{Side (coordinate units) of the square units that are
-held out together; default the bin size (single bins).}
+held out together; default 3 bins. For programs whose length scale is
+close to the bin size, use single bins (`holdout_size` = bin size): a
+field cannot predict across a block much larger than its length scale.}
 
 \item{max_iter}{Iterations for each refit.}
 
@@ -81,19 +83,24 @@ the estimate. A spatial block bootstrap of the per-bin held-out gains
 gives a 95% interval of the length scale and standard errors of the gains.
 }
 \details{
-Held-out single bins (`holdout_size` = bin size, default) measure how
-well the field interpolates between neighbouring bins, which is what the
-length scale describes; larger held-out blocks favour longer length
-scales (the field must extrapolate into the block). The other factors and
+Held-out units of 3 x 3 bins (default) make the field interpolate over a
+short distance. Single held-out bins compressed the estimates towards
+20-40 um in spike-ins (every smooth field interpolates one bin well);
+larger units favour longer length scales and became unstable (estimates
+at the grid edge). The other factors and
 the cellularity field come from the full-data fit and therefore also saw
 the held-out bins; this is the same for every length scale and does not
 move the maximum, but it makes the gains conservative.
 
-In spike-ins into real Xenium tissue (response fields decaying as
-\eqn{e^{-d/\lambda}} around hidden producer cells) see the package NEWS
-for the validation; the estimate describes the RBF length scale that
-best interpolates the field, which is not identical to an exponential
-decay length.
+Validation (6-gene response programs spiked into a real 0.8 x 0.8 mm
+RA Xenium region around hidden producer cells, decaying as
+\eqn{e^{-d/\lambda}}, 8 um bins, 2 seeds per \eqn{\lambda}): Spearman
+correlation of the estimate with \eqn{\lambda} = 10-320 um was 0.89, but
+the estimates are strongly compressed (about 25 um at \eqn{\lambda} =
+10, 40-70 um at \eqn{\lambda} = 320): they rank reaches, they do not
+measure them. The estimate is the RBF length scale that best
+interpolates the field, not an exponential decay length, and scales
+beyond about a tenth of the window are poorly identified.
 }
 \examples{
 \donttest{

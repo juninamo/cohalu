@@ -25,6 +25,11 @@ rff_programs(
   seed = 1,
   n_cores = 1,
   report = NULL,
+  crossfit = FALSE,
+  control = NULL,
+  min_effect = NULL,
+  ls_grid = 5 * 2^(0:6),
+  profile = list(),
   ...
 )
 }
@@ -42,7 +47,9 @@ or a matrix from [rff_offset()] (bins x genes).}
 `offset`, `n_factors`, `lengthscale`, `ard` and `fit_args` are not used
 for fitting; `offset` only documents how the fit's offset was made).}
 
-\item{n_factors, lengthscale, ard}{Fit settings (see [fit_spatial_rff()]).}
+\item{n_factors, lengthscale, ard}{Fit settings (see [fit_spatial_rff()]);
+`lengthscale = "profile"` estimates one length scale per program by
+held-out likelihood ([rff_lengthscale_profile()]).}
 
 \item{fit_args}{Further arguments to [fit_spatial_rff()] (they override
 the defaults above, e.g. `list(max_iter = 300)`).}
@@ -74,6 +81,19 @@ field for the two to be matched.}
 
 \item{report}{Optional path: write [rff_report()] of the result there.}
 
+\item{crossfit, control, min_effect}{Calibrated program test (see
+[rff_program_test()]): cross-fitted held-out effect sizes, comparison
+with negative-control windows ([rff_control_reference()]) and an
+effect-size threshold. With any of them, a detection axis counts as
+significant only when its `call` is `TRUE`. Recommended on real
+tissue, where the plain gene-shift test is rejected by almost any
+shared residual structure.}
+
+\item{ls_grid, profile}{With `lengthscale = "profile"`: length scales to
+profile and settings for [rff_lengthscale_profile()] (see
+[fit_spatial_rff()]); the programs table then reports each program
+map's profiled length scale with its 95% interval.}
+
 \item{...}{Passed to [rff_report()] when `report` is given.}
 }
 \value{
@@ -88,7 +108,10 @@ An object of class `rff_programs`: a list with `programs` (data
   axis even if not matched), `lengthscale`, `program_strength`,
   `uniform_share`, `variance_share`, `n_genes` (genes with |loading| >= 25%
   of the largest), `top_up`, `top_down`, `key` (unique row name) and
-  `map_label` / `axis_label` (M* / D* names of the report). Attributes
+  `map_label` / `axis_label` (M* / D* names of the report),
+  `lengthscale_lower` / `lengthscale_upper` / `heldout_dev_explained`
+  (profiled length scales), `excess` / `excess_lower` / `excess_upper` /
+  `p_control` (calibrated test; `NA` otherwise). Attributes
   `loadings` (genes x rows, the loadings used for interpretation) and
   `fields` (all bins x rows: the program map field, or the axis score for
   Candidates; `NA` outside the tissue). Per-cell values: use

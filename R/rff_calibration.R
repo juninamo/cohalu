@@ -107,19 +107,24 @@
 #' the estimate. A spatial block bootstrap of the per-bin held-out gains
 #' gives a 95% interval of the length scale and standard errors of the gains.
 #'
-#' Held-out single bins (`holdout_size` = bin size, default) measure how
-#' well the field interpolates between neighbouring bins, which is what the
-#' length scale describes; larger held-out blocks favour longer length
-#' scales (the field must extrapolate into the block). The other factors and
+#' Held-out units of 3 x 3 bins (default) make the field interpolate over a
+#' short distance. Single held-out bins compressed the estimates towards
+#' 20-40 um in spike-ins (every smooth field interpolates one bin well);
+#' larger units favour longer length scales and became unstable (estimates
+#' at the grid edge). The other factors and
 #' the cellularity field come from the full-data fit and therefore also saw
 #' the held-out bins; this is the same for every length scale and does not
 #' move the maximum, but it makes the gains conservative.
 #'
-#' In spike-ins into real Xenium tissue (response fields decaying as
-#' \eqn{e^{-d/\lambda}} around hidden producer cells) see the package NEWS
-#' for the validation; the estimate describes the RBF length scale that
-#' best interpolates the field, which is not identical to an exponential
-#' decay length.
+#' Validation (6-gene response programs spiked into a real 0.8 x 0.8 mm
+#' RA Xenium region around hidden producer cells, decaying as
+#' \eqn{e^{-d/\lambda}}, 8 um bins, 2 seeds per \eqn{\lambda}): Spearman
+#' correlation of the estimate with \eqn{\lambda} = 10-320 um was 0.89, but
+#' the estimates are strongly compressed (about 25 um at \eqn{\lambda} =
+#' 10, 40-70 um at \eqn{\lambda} = 320): they rank reaches, they do not
+#' measure them. The estimate is the RBF length scale that best
+#' interpolates the field, not an exponential decay length, and scales
+#' beyond about a tenth of the window are poorly identified.
 #'
 #' @param fit Output of [fit_spatial_rff()] (preferably `basis = "grid"`).
 #' @param binned The `binned_transcripts` object used for the fit.
@@ -130,7 +135,9 @@
 #' @param ls_grid Length scales (coordinate units) to profile.
 #' @param folds Number of held-out groups.
 #' @param holdout_size Side (coordinate units) of the square units that are
-#'   held out together; default the bin size (single bins).
+#'   held out together; default 3 bins. For programs whose length scale is
+#'   close to the bin size, use single bins (`holdout_size` = bin size): a
+#'   field cannot predict across a block much larger than its length scale.
 #' @param max_iter Iterations for each refit.
 #' @param n_boot Block-bootstrap replicates for the intervals.
 #' @param boot_block Side (coordinate units) of the bootstrap blocks
@@ -190,7 +197,7 @@ rff_lengthscale_profile <- function(fit, binned, factors = NULL, ls_grid = 5 * 2
   factors <- intersect(factors, colnames(L))
   if (!length(factors)) stop("No factor to profile.")
   .local_seed(seed)
-  hs <- if (is.null(holdout_size)) g$bin_size else holdout_size
+  hs <- if (is.null(holdout_size)) 3 * g$bin_size else holdout_size
   unit <- .rff_units(g, keep, hs)
   fold <- sample(rep_len(seq_len(folds), max(unit)))[unit]
   bb <- if (is.null(boot_block)) 8 * g$bin_size else boot_block
@@ -348,16 +355,17 @@ print.rff_ls_profile <- function(x, ...) {
   if (sum(hv$evalA) < 20 || sum(hv$evalB) < 20) stop("Too few bins for cross-fitting; use a smaller `crossfit_block`.")
   R <- sp$process(sp$Y, sp$mu, sp$v)
   cf <- .rff_cf_shares(R, hv, k)
-  nul <- matrix(0, n_boot, k); Cbar <- if (keep_cov) 0 else NULL; Cs <- list()
+  nul <- matrix(0, n_boot, k); Cbar <- if (keep_cov) 0 else NULL
   for (b in seq_len(n_boot)) {
     z <- sp$surrogate(sp$mu, sp$v); Rz <- sp$process(z$Y, z$mu, z$v)
     nul[b, ] <- .rff_cf_shares(Rz, hv, k)$share
-    if (keep_cov) { Cz <- crossprod(Rz) / sum(Rz^2); Cbar <- Cbar + Cz / n_boot; if (b <= 19) Cs[[b]] <- Cz }
+    if (keep_cov) { Cz <- crossprod(Rz) / sum(Rz^2); Cbar <- Cbar + Cz / n_boot }
   }
   bs <- .rff_cf_boot(cf, n_boot_ci)
   m <- colMeans(nul)
   list(share = cf$share, null = nul, null_mean = m, excess = cf$share / m - 1,
-       excess_boot = bs / m - 1, C = if (keep_cov) crossprod(R) / sum(R^2) else NULL, Cbar = Cbar, Cs = Cs,
+       excess_boot = bs / m - 1, C = if (keep_cov) crossprod(R) / sum(R^2) else NULL, Cbar = Cbar,
+       V = if (keep_cov) svd(R, nu = 0, nv = k)$v else NULL,
        R = R, N = sp$N, genes = fit$genes, block = block)
 }
 
@@ -394,10 +402,12 @@ print.rff_ls_profile <- function(x, ...) {
 #'
 #' @return An object of class `rff_control`: `excess` (controls x
 #'   components), `share`, `null_mean`, per-window covariances `C` and
-#'   `Cbar`, `loo` (leave-one-out calibration: for every control window and
-#'   component, its held-out p-value and its control p-value against the
-#'   other controls; `called` = both <= 0.05, i.e. the false-positive rate
-#'   of the procedure among negative controls), `genes` and `settings`.
+#'   `Cbar` and component directions `V`, `loo` (leave-one-out calibration:
+#'   every control window tested against the others - held-out p-value,
+#'   rank-wise `p_control`, direction-wise `z_dir` / `p_dir`; `called` /
+#'   `called_dir` = held-out p and the control p <= 0.05, i.e. the
+#'   false-positive rate of the procedure among negative controls), `genes`
+#'   and `settings`.
 #' @seealso [rff_program_test()]
 #' @export
 rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NULL, n_components = 6, n_boot = 49,
@@ -419,19 +429,49 @@ rff_control_reference <- function(fits, binned, bandwidth = NULL, highpass = NUL
   dimnames(E) <- list(wn, paste0("PC", seq_len(k)))
   ph <- t(vapply(res, function(w) cummax(vapply(seq_len(k), function(j) (1 + sum(w$null[, j] >= w$share[j])) / (nrow(w$null) + 1), 0)),
                  numeric(k))); if (k == 1) ph <- matrix(ph, ncol = 1)
-  m <- nrow(E)
-  pc <- vapply(seq_len(k), function(j) vapply(seq_len(m), function(i) (1 + sum(E[-i, j] >= E[i, j])) / m, 0), numeric(m))
-  pc <- matrix(pc, m, k)
-  loo <- data.frame(window = rep(wn, k), component = rep(colnames(E), each = m), excess = as.vector(E),
-                    p_heldout = as.vector(ph), p_control = as.vector(pc), called = as.vector(ph <= 0.05 & pc <= 0.05),
-                    row.names = NULL)
-  structure(list(excess = E, share = t(vapply(res, `[[`, numeric(k), "share")),
-                 null_mean = t(vapply(res, `[[`, numeric(k), "null_mean")),
-                 C = lapply(res, `[[`, "C"), Cbar = lapply(res, `[[`, "Cbar"), Cs = lapply(res, `[[`, "Cs"),
-                 N = vapply(res, `[[`, 1, "N"), loo = loo, genes = genes,
-                 settings = list(bandwidth = bandwidth, highpass = highpass, n_components = k, n_boot = n_boot,
-                                 crossfit_block = res[[1]]$block)),
-            class = "rff_control")
+  out <- structure(list(excess = E, share = t(vapply(res, `[[`, numeric(k), "share")),
+                        null_mean = t(vapply(res, `[[`, numeric(k), "null_mean")), p_heldout = ph,
+                        C = lapply(res, `[[`, "C"), Cbar = lapply(res, `[[`, "Cbar"), V = lapply(res, `[[`, "V"),
+                        N = vapply(res, `[[`, 1, "N"), genes = genes,
+                        settings = list(bandwidth = bandwidth, highpass = highpass, n_components = k, n_boot = n_boot,
+                                        crossfit_block = res[[1]]$block)),
+                   class = "rff_control")
+  out$loo <- .rff_control_loo(out)
+  out
+}
+
+# Subset of the control windows of a reference (e.g. leave one out).
+.rff_control_subset <- function(ref, keep) {
+  r <- ref
+  r$excess <- ref$excess[keep, , drop = FALSE]; r$share <- ref$share[keep, , drop = FALSE]
+  r$null_mean <- ref$null_mean[keep, , drop = FALSE]; r$p_heldout <- ref$p_heldout[keep, , drop = FALSE]
+  r$C <- ref$C[keep]; r$Cbar <- ref$Cbar[keep]; r$V <- ref$V[keep]; r$N <- ref$N[keep]
+  r$loo <- .rff_control_loo(r)
+  r
+}
+
+# Direction-specific z of a target (excess `e` along unit direction `v`)
+# against control windows `idx`.
+.rff_zdir <- function(ref, v, e, idx = seq_along(ref$C)) {
+  ec <- vapply(idx, function(i) drop(crossprod(v, ref$C[[i]] %*% v)) / max(drop(crossprod(v, ref$Cbar[[i]] %*% v)), 1e-12) - 1, 0)
+  list(z = (e - mean(ec)) / max(stats::sd(ec), 1e-12), e = ec)
+}
+
+# Leave-one-out calibration among the controls: each control window is tested
+# against the others, rank-wise (p_control) and direction-wise (z_dir: its
+# excess along its own component direction vs the others' excess along that
+# direction; p_dir: its z_dir among the other controls' z_dir, i.e. the
+# calibrated direction-specific p-value).
+.rff_control_loo <- function(ref) {
+  E <- ref$excess; m <- nrow(E); k <- ncol(E); wn <- rownames(E)
+  pc <- matrix(vapply(seq_len(k), function(j) vapply(seq_len(m), function(i) (1 + sum(E[-i, j] >= E[i, j])) / m, 0), numeric(m)), m, k)
+  Z <- matrix(NA_real_, m, k)
+  if (!is.null(ref$V[[1]])) for (i in seq_len(m)) for (j in seq_len(k)) Z[i, j] <- .rff_zdir(ref, ref$V[[i]][, j], E[i, j], setdiff(seq_len(m), i))$z
+  pd <- matrix(vapply(seq_len(k), function(j) vapply(seq_len(m), function(i) (1 + sum(Z[-i, j] >= Z[i, j])) / m, 0), numeric(m)), m, k)
+  ph <- ref$p_heldout
+  data.frame(window = rep(wn, k), component = rep(colnames(E), each = m), excess = as.vector(E),
+             p_heldout = as.vector(ph), p_control = as.vector(pc), z_dir = as.vector(Z), p_dir = as.vector(pd),
+             called = as.vector(ph <= 0.05 & pc <= 0.05), called_dir = as.vector(ph <= 0.05 & pd <= 0.05), row.names = NULL)
 }
 
 #' @export
@@ -441,23 +481,15 @@ print.rff_control <- function(x, ...) {
   cat("  relative excess of held-out share over gene-shift surrogates (median / 95th percentile):\n")
   cat("   ", paste(sprintf("%s %.2f/%.2f", colnames(x$excess), q[1, ], q[2, ]), collapse = "  "), "\n")
   l <- x$loo
-  cat(sprintf("  leave-one-out: held-out test alone called %d/%d control windows (any component); with the control comparison %d/%d\n",
-              length(unique(l$window[l$p_heldout <= 0.05])), nrow(x$excess), length(unique(l$window[l$called])), nrow(x$excess)))
+  pc1 <- l[l$component == "PC1", ]
+  cat(sprintf("  leave-one-out (first component): held-out test alone called %d/%d control windows; rank-wise control comparison %d/%d; direction-wise %d/%d\n",
+              sum(pc1$p_heldout <= 0.05), nrow(pc1), sum(pc1$called), nrow(pc1), sum(pc1$called_dir), nrow(pc1)))
   invisible(x)
-}
-
-# direction-specific control statistic: relative excess of the residual
-# variance share along unit direction v in each control window
-.rff_control_dir <- function(control, v) {
-  vapply(seq_along(control$C), function(i) {
-    C <- control$C[[i]]; Cb <- control$Cbar[[i]]
-    drop(crossprod(v, C %*% v)) / max(drop(crossprod(v, Cb %*% v)), 1e-12) - 1
-  }, 0)
 }
 
 # Internal: rff_program_test(null = "shift", crossfit = TRUE [, control]).
 .rff_program_test_cf <- function(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed,
-                                 highpass, crossfit_block, control, min_effect, n_boot_ci) {
+                                 highpass, crossfit_block, control, min_effect, n_boot_ci, control_stat = "direction") {
   .local_seed(seed)
   if (!is.null(control)) {
     if (!inherits(control, "rff_control")) stop("`control` must come from rff_control_reference().")
@@ -492,9 +524,11 @@ print.rff_control <- function(x, ...) {
     E <- control$excess[, seq_len(k), drop = FALSE]
     out$p_control <- vapply(seq_len(k), function(j) (1 + sum(E[, j] >= out$excess[j])) / (nrow(E) + 1), 0)
     out$control_q95 <- apply(E, 2, stats::quantile, 0.95)
-    out$p_control_dir <- vapply(seq_len(k), function(j) {
-      e <- .rff_control_dir(control, sv$v[, j]); (1 + sum(e >= out$excess[j])) / (length(e) + 1) }, 0)
-    call <- call & out$p_control <= alpha
+    zd <- lapply(seq_len(k), function(j) .rff_zdir(control, sv$v[, j], out$excess[j]))
+    out$z_control_dir <- vapply(zd, `[[`, 0, "z")
+    Zc <- matrix(control$loo$z_dir, nrow(E))
+    out$p_control_dir <- vapply(seq_len(k), function(j) (1 + sum(Zc[, j] >= out$z_control_dir[j])) / (nrow(E) + 1), 0)
+    call <- call & (if (control_stat == "rank") out$p_control else out$p_control_dir) <= alpha
   }
   out$effect_threshold <- thr
   call <- call & out$excess_lower > thr

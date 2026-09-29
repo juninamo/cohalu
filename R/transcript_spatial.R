@@ -1732,8 +1732,21 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
 #'   `p_control` (share of control windows whose excess at the same rank is
 #'   at least the target's), `control_q95`, and `p_control_dir` (the
 #'   direction-specific version: excess of the residual variance along the
-#'   target's component direction in each control window); `call` then also
-#'   requires `p_control <= alpha`.
+#'   target's component direction in each control window, standardised
+#'   over the controls (`z_control_dir`) and compared with the same
+#'   statistic of every control window against the others); `call` then
+#'   also requires the control p-value chosen by `control_stat` to be
+#'   `<= alpha`.
+#' @param control_stat Which comparison with the controls enters `call`:
+#'   `"direction"` (default; `p_control_dir`: is the target's component
+#'   direction more active in the target than in the controls, calibrated by
+#'   treating every control window the same way) or `"rank"` (`p_control`:
+#'   is the target's k-th component stronger than the controls' k-th
+#'   components?). On 24 non-TLS tiles of a real RA Xenium section both
+#'   called 0-1/24 tiles (leave-one-out) versus 15/24 for the cross-fitted
+#'   test alone; for 6-gene programs planted into the tiles (log-amplitude
+#'   0.75 / 1) the direction-wise comparison found the program in 33% / 58%
+#'   of tiles, the rank-wise one in 4% / 38%.
 #' @param min_effect Optional effect-size threshold: a component is called
 #'   only if `excess_lower` exceeds it (implies `crossfit = TRUE`).
 #' @param n_boot_ci Block-bootstrap replicates for the interval of `excess`.
@@ -1752,7 +1765,8 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
 #'   and the top genes by loading; with `crossfit = TRUE` also
 #'   `share_heldout`, `null_heldout`, `excess`, `excess_lower`,
 #'   `excess_upper`, `z_heldout`, `effect_threshold`, `call` and, with
-#'   `control`, `p_control`, `control_q95`, `p_control_dir`. Attributes
+#'   `control`, `p_control`, `control_q95`, `z_control_dir`,
+#'   `p_control_dir`. Attributes
 #'   `scores` (in-tissue bins x components), `loadings` (genes x
 #'   components), `null_shares` and, for `null = "shift"`, `null` (and
 #'   `crossfit`).
@@ -1769,7 +1783,8 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
                              sequential = TRUE, alpha = 0.05, seed = 1,
                              null = c("parametric", "shift"), highpass = NULL,
                              crossfit = FALSE, crossfit_block = NULL, control = NULL, min_effect = NULL,
-                             n_boot_ci = 200, robust = FALSE) {
+                             n_boot_ci = 200, robust = FALSE, control_stat = c("direction", "rank")) {
+  control_stat <- match.arg(control_stat)
   null <- match.arg(null)
   if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
   if (!is.null(highpass) && null != "shift") stop("`highpass` is only used with null = \"shift\".")
@@ -1779,7 +1794,7 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
   if (crossfit) {
     if (identical(fit$offset, "smoothed_total")) stop("rff_program_test() supports offset = \"area\" or a matrix offset.")
     return(.rff_program_test_cf(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed, highpass,
-                                crossfit_block, control, min_effect, n_boot_ci))
+                                crossfit_block, control, min_effect, n_boot_ci, control_stat))
   }
   if (null == "shift") return(.rff_program_test_shift(fit, binned, bandwidth, n_components, n_boot, sequential, alpha, seed, highpass,
                                                       robust = robust))

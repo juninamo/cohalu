@@ -32,10 +32,12 @@ genes as the target fits).}
 \value{
 An object of class `rff_control`: `excess` (controls x
   components), `share`, `null_mean`, per-window covariances `C` and
-  `Cbar`, `loo` (leave-one-out calibration: for every control window and
-  component, its held-out p-value and its control p-value against the
-  other controls; `called` = both <= 0.05, i.e. the false-positive rate
-  of the procedure among negative controls), `genes` and `settings`.
+  `Cbar` and component directions `V`, `loo` (leave-one-out calibration:
+  every control window tested against the others - held-out p-value,
+  rank-wise `p_control`, direction-wise `z_dir` / `p_dir`; `called` /
+  `called_dir` = held-out p and the control p <= 0.05, i.e. the
+  false-positive rate of the procedure among negative controls), `genes`
+  and `settings`.
 }
 \description{
 **Experimental.** On real tissue, the gene-shift null of
