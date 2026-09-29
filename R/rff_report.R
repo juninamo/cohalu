@@ -31,8 +31,10 @@
 #' known-program table; null distributions of the tests; methods; how to
 #' reproduce; session information.
 #'
-#' @param fit Output of [fit_spatial_rff()].
-#' @param binned The `binned_transcripts` object used for the fit.
+#' @param fit Output of [fit_spatial_rff()] or [rff_programs()], or a
+#'   multi-window fit of [fit_spatial_rff_joint()] (see `window`).
+#' @param binned The `binned_transcripts` object used for the fit (a list of
+#'   them for a multi-window fit).
 #' @param test `NULL`, a data frame returned by [rff_factor_test()] or
 #'   [rff_program_test()], or a (named) list of such data frames.
 #' @param file Path of the HTML file.
@@ -65,6 +67,13 @@
 #' @param out_dir Directory for the outputs (default: `<file without
 #'   extension>_files` next to the HTML).
 #' @param open Open the report in the browser ([utils::browseURL()]).
+#' @param window Only for a multi-window fit ([fit_spatial_rff_joint()]
+#'   given as `fit`, with `binned` the list of its windows): the window
+#'   (name or index) whose fields are shown; default the window with the
+#'   largest total program amplitude. `test` may then be the discovery-mode
+#'   output of [rff_program_test_joint()] (p-values of the joint test,
+#'   variance shares and scores of this window); the shared loadings and the
+#'   per-window amplitudes are summarised in the input section.
 #'
 #' @section Names used in the report: The factors of the fit are shown as
 #'   **program maps** M1, M2, ... (the smooth field and gene loadings used for
@@ -90,10 +99,17 @@ rff_report <- function(fit, binned, test = NULL, file = "rflvm_report.html", tit
                        top_genes = 15, cells = NULL, cell_label_col = NULL, cell_xy = c("x", "y"),
                        known_programs = NULL, offset_info = NULL, meta = NULL,
                        map_genes = NULL, n_map_genes = 30, max_pixels = 40000, max_cells = 20000,
-                       alpha = 0.05, min_r = 0.5, export = TRUE, out_dir = NULL, open = interactive()) {
+                       alpha = 0.05, min_r = 0.5, export = TRUE, out_dir = NULL, open = interactive(),
+                       window = NULL) {
   t_start <- Sys.time()
   cl <- match.call()
   res_obj <- NULL
+  if (inherits(fit, "spatial_rff_joint")) {
+    # multi-window fit with shared loadings: report one window (fields of that window, shared loadings)
+    jo <- .rr_joint_window(fit, binned, test, window)
+    fit <- jo$fit; binned <- jo$binned; test <- jo$test
+    meta <- c(meta, jo$meta)
+  }
   if (inherits(fit, "rff_programs")) {
     res_obj <- fit; fit <- res_obj$fit
     if (is.null(test)) {
@@ -456,7 +472,50 @@ rff_report <- function(fit, binned, test = NULL, file = "rflvm_report.html", tit
   out
 }
 
+# Pick one window of a spatial_rff_joint fit for rff_report(); convert a joint
+# test (rff_program_test_joint(), discovery mode) to that window's view.
+.rr_joint_window <- function(jf, binned, test, window) {
+  wn <- names(jf$fits); if (is.null(wn)) wn <- paste0("window", seq_along(jf$fits))
+  if (is.null(window)) window <- wn[which.max(rowSums(jf$amplitude))]
+  if (is.numeric(window)) window <- wn[window]
+  if (length(window) != 1 || !window %in% wn) stop("`window` must name (or index) one window of the joint fit.")
+  w <- match(window, wn)
+  if (!inherits(binned, "binned_transcripts")) {
+    if (!is.list(binned)) stop("`binned` must be a binned_transcripts object or a list of them (one per window).")
+    binned <- if (!is.null(names(binned)) && window %in% names(binned)) binned[[window]] else binned[[w]]
+  }
+  f <- jf$fits[[w]]
+  if (is.data.frame(test) && identical(attr(test, "null", exact = TRUE), "shift_joint")) {
+    sc <- attr(test, "scores", exact = TRUE); ws <- attr(test, "window_share", exact = TRUE)
+    U <- if (!is.null(names(sc)) && window %in% names(sc)) sc[[window]] else NULL
+    Fm <- f$field_grid[f$in_tissue, colnames(f$L), drop = FALSE]
+    cc <- if (!is.null(U)) abs(suppressWarnings(stats::cor(U, Fm))) else matrix(NA_real_, nrow(test), ncol(Fm))
+    cc[!is.finite(cc)] <- 0
+    t2 <- data.frame(component = test$component,
+                     share = if (!is.null(ws) && window %in% rownames(ws)) unname(ws[window, test$component]) else test$share,
+                     p = test$p, factor = colnames(Fm)[apply(cc, 1, which.max)], r_factor = apply(cc, 1, max),
+                     top_genes = test$top_genes, stringsAsFactors = FALSE)
+    attr(t2, "scores") <- U; attr(t2, "loadings") <- attr(test, "loadings", exact = TRUE)
+    attr(t2, "null_shares") <- attr(test, "null_shares", exact = TRUE); attr(t2, "null") <- "shift_joint"
+    attr(t2, "sequential") <- TRUE
+    test <- t2
+  }
+  amp <- jf$amplitude
+  meta <- list(joint_fit = sprintf("shared loadings over %d windows (fit_spatial_rff_joint); this report shows window %s. Variance shares in the test table are this window's; p-values are the joint test's.",
+                                   length(wn), window),
+               amplitude_this_window = paste(sprintf("%s %.2f", colnames(amp), amp[w, ]), collapse = "; "),
+               amplitude_median_all_windows = paste(sprintf("%s %.2f", colnames(amp), apply(amp, 2, stats::median)), collapse = "; "))
+  list(fit = f, binned = binned, test = test, meta = meta)
+}
+
 .rr_caveat <- function(kind, null, highpass = NULL) {
+  if (identical(null, "shift_joint")) {
+    return(paste(
+      "Joint gene-shift test (rff_program_test_joint): processed residuals of all windows are pooled into one gene x gene",
+      "covariance (shared loadings); surrogates shift every gene independently within every window. Significance means a",
+      "program shared by several genes and recurring across windows. p-values refer to the pooled data, not to this window;",
+      "shown shares are this window's. Validate programs in held-out data with the confirmatory mode (`loadings =`)."))
+  }
   if (kind == "factor") {
     return(paste(
       "Parametric bootstrap: counts are simulated from the fitted null model (bin area, offset, gene intercepts,",

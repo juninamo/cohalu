@@ -25,13 +25,16 @@ rff_report(
   min_r = 0.5,
   export = TRUE,
   out_dir = NULL,
-  open = interactive()
+  open = interactive(),
+  window = NULL
 )
 }
 \arguments{
-\item{fit}{Output of [fit_spatial_rff()].}
+\item{fit}{Output of [fit_spatial_rff()] or [rff_programs()], or a
+multi-window fit of [fit_spatial_rff_joint()] (see `window`).}
 
-\item{binned}{The `binned_transcripts` object used for the fit.}
+\item{binned}{The `binned_transcripts` object used for the fit (a list of
+them for a multi-window fit).}
 
 \item{test}{`NULL`, a data frame returned by [rff_factor_test()] or
 [rff_program_test()], or a (named) list of such data frames.}
@@ -82,6 +85,14 @@ all cells).}
 extension>_files` next to the HTML).}
 
 \item{open}{Open the report in the browser ([utils::browseURL()]).}
+
+\item{window}{Only for a multi-window fit ([fit_spatial_rff_joint()]
+given as `fit`, with `binned` the list of its windows): the window
+(name or index) whose fields are shown; default the window with the
+largest total program amplitude. `test` may then be the discovery-mode
+output of [rff_program_test_joint()] (p-values of the joint test,
+variance shares and scores of this window); the shared loadings and the
+per-window amplitudes are summarised in the input section.}
 }
 \value{
 The path of the HTML file, invisibly.

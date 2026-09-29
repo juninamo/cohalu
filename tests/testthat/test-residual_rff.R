@@ -282,3 +282,21 @@ test_that("rff_program_test_joint(): shared loadings, confirmatory mode and join
   expect_length(jf$fits, 3)
   expect_output(print(jf), "shared programs")
 })
+
+test_that("rff_report() shows one window of a joint fit with the joint test", {
+  skip_on_cran()
+  ws <- .joint_windows(W = 2)
+  bs <- lapply(ws, `[[`, "b"); names(bs) <- c("w1", "w2")
+  fits <- lapply(ws, function(w) fit_spatial_rff(w$b, n_factors = 2, offset = w$off, basis = "grid", lengthscales = 8,
+                                                 learn_lengthscales = FALSE, ard = 10, max_iter = 20))
+  names(fits) <- names(bs)
+  jt <- rff_program_test_joint(fits, bs, n_boot = 5, n_components = 2)
+  jf <- fit_spatial_rff_joint(bs, lapply(ws, `[[`, "off"), loadings = attr(jt, "loadings")[, 1, drop = FALSE],
+                              n_iter = 1, lengthscales = 8, max_iter = 15)
+  f <- file.path(tempdir(), "joint_report.html")
+  out <- rff_report(jf, bs, test = jt, file = f, window = "w2", export = FALSE, open = FALSE)
+  expect_true(file.exists(f))
+  h <- paste(readLines(f, warn = FALSE), collapse = "\n")
+  expect_true(grepl("shared loadings over 2 windows", h, fixed = TRUE))
+  expect_error(rff_report(jf, bs, window = "nope", file = f, export = FALSE, open = FALSE), "window")
+})

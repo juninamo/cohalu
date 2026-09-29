@@ -52,6 +52,19 @@
   windows with shared loadings, `fit_spatial_rff_joint()` fits the factor
   model across windows with shared loadings, and `rff_expected_offset()`
   builds an offset from the cell types that own each bin's transcripts.
+  `rff_offset(base = )` adds covariates on top of such an offset, and
+  `fit_spatial_rff(loadings = )` maps given programs in a new tissue (fixed
+  loadings; per-tissue `amplitude`). In simulations (8 windows, 30 genes,
+  4-gene program, gene-own residual fields, `highpass = 20`), the joint test
+  found a program of amplitude 0.35 / 0.5 in 13/20 / 20/20 window sets while
+  per-window tests found it in 0% / 10% of windows; without a program it
+  called 0/20 (with or without gene-own fields); held-out confirmation
+  (`loadings =`) was significant in 18/20 / 20/20. On 195 real TLS windows,
+  gene-shifted sanity data were called in 30/585 replicates (5.1%).
+  `rff_report()` accepts a `fit_spatial_rff_joint()` fit (new argument
+  `window`) and the discovery output of `rff_program_test_joint()`.
+  `rff_program_test_joint()` now reduces each surrogate draw inside the
+  worker (memory) and recomputes draws lost in a parallel worker serially.
 * Residual random-feature model (experimental): `fit_spatial_rff()` accepts
   a per-bin, per-gene log `offset` matrix describing structure that is
   already known (cell-type composition, domains, or an embedding such as

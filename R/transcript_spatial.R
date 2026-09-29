@@ -1919,13 +1919,21 @@ rff_program_test_joint <- function(fits, binned, loadings = NULL, bandwidth = NU
   Robs <- lapply(preps, function(sp) sp$process(sp$Y, sp$mu))
   # surrogate data: one list (over windows) of processed residual matrices per draw,
   # reduced right away to what the statistic needs
-  run_boot <- function(reduce) {
+  run_boot <- function(reduce, combine = identity) {
     one <- function(b) {
       set.seed(seeds[b])
-      lapply(preps, function(sp) { z <- sp$surrogate(sp$mu); reduce(sp$process(z$Y, z$mu)) })
+      combine(lapply(preps, function(sp) { z <- sp$surrogate(sp$mu); reduce(sp$process(z$Y, z$mu)) }))
     }
-    if (n_cores > 1) parallel::mclapply(seq_len(n_boot), one, mc.cores = n_cores, mc.preschedule = FALSE) else
-      lapply(seq_len(n_boot), one)
+    if (n_cores == 1) return(lapply(seq_len(n_boot), one))
+    res <- suppressWarnings(parallel::mclapply(seq_len(n_boot), one, mc.cores = n_cores, mc.preschedule = FALSE))
+    # draws lost in a worker (e.g. killed for memory) are recomputed serially; each draw has its own seed
+    bad <- which(vapply(res, function(r) is.null(r) || inherits(r, "try-error"), TRUE))
+    if (length(res) < n_boot) bad <- union(bad, seq.int(length(res) + 1L, n_boot))
+    if (length(bad)) {
+      warning(length(bad), " surrogate draw(s) failed in parallel workers and were recomputed serially.")
+      for (b in bad) res[[b]] <- one(b)
+    }
+    res
   }
   if (is.null(loadings)) {
     n_components <- max(1L, min(as.integer(n_components), J))
@@ -1937,11 +1945,12 @@ rff_program_test_joint <- function(fits, binned, loadings = NULL, bandwidth = NU
     V <- e$vectors[, seq_len(n_components), drop = FALSE]
     # sign: largest absolute loading positive
     sg <- apply(V, 2, function(v) sign(v[which.max(abs(v))])); V <- sweep(V, 2, sg, "*")
-    bs <- run_boot(crossprod)
-    null_mat <- t(vapply(bs, function(cl) {
+    # each draw is reduced to its pooled spectrum inside the worker (small results)
+    bs <- run_boot(crossprod, function(cl) {
       Cs <- Reduce(`+`, Map(`*`, cl, cw)); ev <- eigen(Cs, symmetric = TRUE, only.values = TRUE)$values
       (ev / sum(ev))[seq_len(n_components)]
-    }, numeric(n_components)))
+    })
+    null_mat <- t(vapply(bs, identity, numeric(n_components)))
     if (n_components == 1) null_mat <- matrix(null_mat, ncol = 1)
     null_shares <- lapply(seq_len(n_components), function(k) null_mat[, if (sequential) k else 1])
     p <- vapply(seq_len(n_components), function(k) (1 + sum(null_shares[[k]] >= share[k])) / (n_boot + 1), 0)
