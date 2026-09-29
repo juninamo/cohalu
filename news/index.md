@@ -78,6 +78,12 @@
   fields); held-out confirmation (`loadings =`) was significant in 18/20
   / 20/20. On 195 real TLS windows, gene-shifted sanity data were called
   in 30/585 replicates (5.1%).
+  `rff_expected_offset(neighbour_bandwidth = )` also returns the counts
+  expected from the cell types of neighbouring bins (attribute
+  `neighbour`), and `rff_offset(gene_covariates = )` adds gene-specific
+  covariates (one coefficient per gene) - together they absorb
+  segmentation spill-over / mixed cells, which otherwise appear as
+  cell-type-marker “programs” in residual analyses.
   [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)
   accepts a
   [`fit_spatial_rff_joint()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff_joint.md)

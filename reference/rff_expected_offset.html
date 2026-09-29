@@ -99,7 +99,8 @@ expectation.</p>
 <span>  gene_col <span class="op">=</span> <span class="st">"gene"</span>,</span>
 <span>  reference_genes <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  profiles <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  pseudo <span class="op">=</span> <span class="fl">0.05</span></span>
+<span>  pseudo <span class="op">=</span> <span class="fl">0.05</span>,</span>
+<span>  neighbour_bandwidth <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -137,12 +138,23 @@ whole section), used for \(\rho\); default: computed from `tx`.</p></dd>
 <dd><p>Added to the expected counts, as a fraction of each gene's
 mean expected count per in-tissue bin, to keep the log finite.</p></dd>
 
+
+<dt id="arg-neighbour-bandwidth">neighbour_bandwidth<a class="anchor" aria-label="anchor" href="#arg-neighbour-bandwidth"></a></dt>
+<dd><p>Optional Gaussian bandwidth (coordinate units,
+e.g. 8-10 um): also compute the counts expected from the cell types of
+the *neighbouring* bins (own bin excluded), returned as attribute
+`neighbour` (same scale as the offset). `neighbour - offset` is the log
+ratio of neighbour-expected to owner-expected counts; passed to
+`rff_offset(gene_covariates = )` it absorbs segmentation spill-over and
+mixed cells (transcripts of one cell type assigned to its neighbours).</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A numeric matrix (all bins x modelled genes, natural log scale per
   unit area) for `fit_spatial_rff(offset = )` or `rff_offset(base = )`,
-  with attribute `type_counts` (bins x types reference counts).</p>
+  with attribute `type_counts` (bins x types reference counts) and, with
+  `neighbour_bandwidth`, attribute `neighbour`.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
