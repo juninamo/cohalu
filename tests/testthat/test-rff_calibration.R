@@ -141,3 +141,17 @@ test_that("rff_transfer_test(): true program vs permuted and irrelevant loadings
   expect_true(is.finite(th$statistic))
   expect_error(rff_transfer_test(matrix(1, 2, 1), ft, tgt), "row names")
 })
+
+test_that("rff_programs(lengthscale = \"profile\") reports profiled length scales and the report shows them", {
+  skip_on_cran()
+  b <- cal_sim(5, ell = 10, n = 36, J = 14, prog = 1:5)
+  r <- rff_programs(b, n_factors = 3, lengthscale = "profile", ls_grid = c(5, 10, 20, 40), ard = 20, n_boot = 19, crossfit = TRUE,
+                    fit_args = list(max_iter = 50), profile = list(init = 10, folds = 3, max_iter = 50, n_boot = 30))
+  p <- r$programs[r$programs$status == "Confirmed", ]
+  expect_gte(nrow(p), 1)
+  expect_true(all(is.finite(p$lengthscale_lower)))
+  expect_true(p$lengthscale_lower[1] <= p$lengthscale[1] && p$lengthscale[1] <= p$lengthscale_upper[1])
+  f <- tempfile(fileext = ".html")
+  rff_report(r, b, file = f, open = FALSE, export = FALSE)
+  expect_true(grepl("Length-scale profiles", paste(readLines(f), collapse = "\n"), fixed = TRUE))
+})

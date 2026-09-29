@@ -105,7 +105,10 @@
 #' profile is the held-out log-likelihood gain over the same model without
 #' the program; its maximum (refined by a parabola in log length scale) is
 #' the estimate. A spatial block bootstrap of the per-bin held-out gains
-#' gives a 95% interval of the length scale and standard errors of the gains.
+#' gives a 95% interval and standard errors of the gains; the interval
+#' reflects the uncertainty of the held-out criterion for this field
+#' realisation only and was much narrower than the spread between
+#' replicate spike-ins.
 #'
 #' Held-out units of 3 x 3 bins (default) make the field interpolate over a
 #' short distance. Single held-out bins compressed the estimates towards
