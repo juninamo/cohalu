@@ -14,7 +14,13 @@ rff_program_test(
   alpha = 0.05,
   seed = 1,
   null = c("parametric", "shift"),
-  highpass = NULL
+  highpass = NULL,
+  crossfit = FALSE,
+  crossfit_block = NULL,
+  control = NULL,
+  min_effect = NULL,
+  n_boot_ci = 200,
+  robust = FALSE
 )
 }
 \arguments{
@@ -75,14 +81,60 @@ and `highpass`), so that broad gene-specific residual fields do not mask
 small-scale programs. With `highpass = 4 * bandwidth` (20 um), power
 for an amplitude-1 program with 20 um gene-specific fields rose from
 4/30 to 26/30 tissues, with 0-3/30 calls without a shared program.}
+
+\item{crossfit}{Only for `null = "shift"`. `FALSE` (default): the test
+described above. `TRUE`: cross-fitted effect sizes. The in-tissue bins
+are split into two halves by a checkerboard of square blocks
+(`crossfit_block`); components are found on one half and their share of
+the processed residual variance is measured on the other half (bins
+next to the other half excluded), both ways and averaged. The same
+statistic is computed for gene-shift surrogates: `p` compares the
+held-out share with them, `excess` = held-out share / surrogate mean - 1
+is the effect size (0 = no more shared structure than gene-shifted
+data), with a 95% block-bootstrap interval (`excess_lower`,
+`excess_upper`; `n_boot_ci` replicates), and `call` combines `p`, the
+effect-size threshold and, if given, the control comparison.
+Cross-fitting removes the selection bias of in-sample shares, but on
+real tissue shared nuisance structure (spill-over, mixing, cellularity)
+is real and replicates across halves: use `control` or `min_effect` to
+ask for more than that.}
+
+\item{crossfit_block}{Side of the checkerboard blocks (coordinate units;
+default 12 bins).}
+
+\item{control}{Output of [rff_control_reference()] for negative-control
+windows (same genes and settings): implies `crossfit = TRUE`. Adds
+`p_control` (share of control windows whose excess at the same rank is
+at least the target's), `control_q95`, and `p_control_dir` (the
+direction-specific version: excess of the residual variance along the
+target's component direction in each control window); `call` then also
+requires `p_control <= alpha`.}
+
+\item{min_effect}{Optional effect-size threshold: a component is called
+only if `excess_lower` exceeds it (implies `crossfit = TRUE`).}
+
+\item{n_boot_ci}{Block-bootstrap replicates for the interval of `excess`.}
+
+\item{robust}{Only for `null = "shift"` without cross-fitting (the
+cross-fitted test always uses it): floor the Poisson variance of the
+Pearson residuals at 5% of each gene's mean per bin (owner-type offsets
+give near-zero means for genes of absent cell types, so single
+spill-over transcripts would dominate) and take surrogate sources that
+fall outside the tissue from further independent rigid transformations
+of the same gene (instead of zeros, which created shared structure in
+the surrogates of windows with ragged tissue masks).}
 }
 \value{
 A data frame with one row per component: `component`, `share`
   (variance share), `p`, `factor` and `r_factor` (the fitted factor whose
   field correlates best with the component score, and that correlation)
-  and the top genes by loading. Attributes `scores` (in-tissue bins x
-  components), `loadings` (genes x components), `null_shares` and, for
-  `null = "shift"`, `null`.
+  and the top genes by loading; with `crossfit = TRUE` also
+  `share_heldout`, `null_heldout`, `excess`, `excess_lower`,
+  `excess_upper`, `z_heldout`, `effect_threshold`, `call` and, with
+  `control`, `p_control`, `control_q95`, `p_control_dir`. Attributes
+  `scores` (in-tissue bins x components), `loadings` (genes x
+  components), `null_shares` and, for `null = "shift"`, `null` (and
+  `crossfit`).
 }
 \description{
 **Experimental.** A hybrid of residual PCA and the random-feature model.

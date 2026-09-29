@@ -24,7 +24,11 @@ fit_spatial_rff(
   basis = c("random", "grid"),
   learn_lengthscales = TRUE,
   l1 = 0,
-  loadings = NULL
+  loadings = NULL,
+  trials = NULL,
+  start = NULL,
+  ls_grid = 5 * 2^(0:6),
+  profile = list()
 )
 }
 \arguments{
@@ -33,7 +37,19 @@ fit_spatial_rff(
 \item{n_factors}{Number of spatial factors `K`.}
 
 \item{lengthscales}{Initial length scales (recycled to `K`); spreading
-them over scales breaks the symmetry between factors.}
+them over scales breaks the symmetry between factors. With
+`learn_lengthscales = FALSE` (recommended) they are the fixed length
+scales. `"profile"` estimates one length scale per factor by held-out
+likelihood: a first fit with fixed length scale `profile$init`
+(default 20) finds the programs, [rff_lengthscale_profile()] profiles
+each program over `ls_grid`, and the model is refitted with the
+profiled length scales (starting from the first fit); the profile is
+returned as `lengthscale_profile`. Learned length scales
+(`learn_lengthscales = TRUE`) are **not** estimates: they are held near
+their initial values by a log-normal prior centred there, and the MAP
+objective (which does not integrate over the field weights) favours the
+smallest length scale; in spike-in tests they stayed at their initial
+values.}
 
 \item{density_lengthscale}{Initial length scale of the cellularity field
 (`NULL` to omit the field). Ignored when `offset = "smoothed_total"`.}
@@ -75,8 +91,16 @@ generously. `0` (default) keeps the Gaussian prior only. After the fit,
 
 \item{n_features}{Number of random frequencies `M` (2M features).}
 
-\item{family}{`"nb"` (negative binomial, gene-specific dispersion) or
-`"poisson"`.}
+\item{family}{`"nb"` (negative binomial, gene-specific dispersion),
+`"poisson"` or `"binomial"`. `"binomial"` models `y` as successes out
+of `trials` with a logit link,
+\eqn{\mathrm{logit}\,p_{bj} = o_{bj} + \alpha_j + \sigma_0 f_0(u_b) +
+\sum_k L_{jk} f_k(u_b)} (no bin area), e.g. the nuclear transcripts of
+each gene and bin out of all its transcripts there. Use it for
+fractions: with a log link and `log(trials)` as offset, a field shared
+by all genes cannot raise genes whose fraction is already near 1, so a
+spurious program with loadings that decrease with each gene's overall
+fraction appears (log-link saturation).}
 
 \item{max_iter}{Maximum L-BFGS-B iterations.}
 
@@ -138,6 +162,22 @@ tissue. The fitted field of each program is rescaled to unit variance as
 usual, so `fit$L` is `loadings` times the program's `amplitude` in this
 tissue (the standard deviation of the fitted field, returned as
 `amplitude`).}
+
+\item{trials}{With `family = "binomial"`: numeric matrix of trials (bins
+or in-tissue bins x genes, columns matched by name when named),
+`>= binned$counts`.}
+
+\item{start}{Optional earlier fit to the same bins and genes with the
+same number of factors: its loadings and (projected) factor fields are
+the starting values of the factors (used by `lengthscales = "profile"`
+to refit with new length scales without relabelling the factors).}
+
+\item{ls_grid}{Length scales (coordinate units) profiled with
+`lengthscales = "profile"`.}
+
+\item{profile}{List of settings for `lengthscales = "profile"`: `init`
+(length scale of the first fit) and further arguments of
+[rff_lengthscale_profile()] (e.g. `folds`, `n_cores`, `factors`).}
 }
 \value{
 An object of class `spatial_rff_fit` with the estimates
@@ -148,7 +188,8 @@ An object of class `spatial_rff_fit` with the estimates
   random frequencies, the genes, the settings (`settings`, used by
   [rff_factor_test()]) and convergence information; with fixed
   `loadings`, also `amplitude` (standard deviation of each program's
-  fitted field; `NULL` otherwise).
+  fitted field; `NULL` otherwise). With `lengthscales = "profile"`, also
+  `lengthscale_profile` (see [rff_lengthscale_profile()]).
 }
 \description{
 **Experimental.** Segmentation-free model of

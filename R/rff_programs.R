@@ -49,7 +49,9 @@
 #' @param fit Optional existing [fit_spatial_rff()] fit to reuse (then
 #'   `offset`, `n_factors`, `lengthscale`, `ard` and `fit_args` are not used
 #'   for fitting; `offset` only documents how the fit's offset was made).
-#' @param n_factors,lengthscale,ard Fit settings (see [fit_spatial_rff()]).
+#' @param n_factors,lengthscale,ard Fit settings (see [fit_spatial_rff()]);
+#'   `lengthscale = "profile"` estimates one length scale per program by
+#'   held-out likelihood ([rff_lengthscale_profile()]).
 #' @param fit_args Further arguments to [fit_spatial_rff()] (they override
 #'   the defaults above, e.g. `list(max_iter = 300)`).
 #' @param null Null of [rff_program_test()]: `"shift"` (recommended on real
@@ -67,6 +69,17 @@
 #' @param seed Random seed.
 #' @param n_cores Cores for the factor test refits.
 #' @param report Optional path: write [rff_report()] of the result there.
+#' @param crossfit,control,min_effect Calibrated program test (see
+#'   [rff_program_test()]): cross-fitted held-out effect sizes, comparison
+#'   with negative-control windows ([rff_control_reference()]) and an
+#'   effect-size threshold. With any of them, a detection axis counts as
+#'   significant only when its `call` is `TRUE`. Recommended on real
+#'   tissue, where the plain gene-shift test is rejected by almost any
+#'   shared residual structure.
+#' @param ls_grid,profile With `lengthscale = "profile"`: length scales to
+#'   profile and settings for [rff_lengthscale_profile()] (see
+#'   [fit_spatial_rff()]); the programs table then reports each program
+#'   map's profiled length scale with its 95% interval.
 #' @param ... Passed to [rff_report()] when `report` is given.
 #'
 #' @return An object of class `rff_programs`: a list with `programs` (data
@@ -80,7 +93,10 @@
 #'   axis even if not matched), `lengthscale`, `program_strength`,
 #'   `uniform_share`, `variance_share`, `n_genes` (genes with |loading| >= 25%
 #'   of the largest), `top_up`, `top_down`, `key` (unique row name) and
-#'   `map_label` / `axis_label` (M* / D* names of the report). Attributes
+#'   `map_label` / `axis_label` (M* / D* names of the report),
+#'   `lengthscale_lower` / `lengthscale_upper` / `heldout_dev_explained`
+#'   (profiled length scales), `excess` / `excess_lower` / `excess_upper` /
+#'   `p_control` (calibrated test; `NA` otherwise). Attributes
 #'   `loadings` (genes x rows, the loadings used for interpretation) and
 #'   `fields` (all bins x rows: the program map field, or the axis score for
 #'   Candidates; `NA` outside the tissue). Per-cell values: use
@@ -105,7 +121,8 @@
 rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengthscale = 8, ard = 100,
                          fit_args = list(), null = c("shift", "parametric", "none"), highpass = NULL,
                          bandwidth = NULL, n_boot = 99, alpha = 0.05, factor_test = FALSE, factor_n_boot = 19,
-                         min_r = 0.5, k = 6, offset_bandwidth = 10, seed = 1, n_cores = 1, report = NULL, ...) {
+                         min_r = 0.5, k = 6, offset_bandwidth = 10, seed = 1, n_cores = 1, report = NULL,
+                         crossfit = FALSE, control = NULL, min_effect = NULL, ls_grid = 5 * 2^(0:6), profile = list(), ...) {
   t0 <- Sys.time()
   cl <- match.call()
   null <- match.arg(null)
@@ -118,8 +135,12 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
     args <- utils::modifyList(list(binned = binned, offset = off$offset, n_factors = n_factors, basis = "grid",
                                    lengthscales = lengthscale, learn_lengthscales = FALSE,
                                    factor_init = "residual_pca", ard = ard, seed = seed), fit_args)
+    if (identical(lengthscale, "profile")) {
+      args$ls_grid <- ls_grid
+      args$profile <- utils::modifyList(list(n_cores = n_cores, seed = seed), profile)
+    }
     fit <- do.call(fit_spatial_rff, args)
-    fit_call <- as.call(c(as.name("fit_spatial_rff"), lapply(args, function(a) if (is.matrix(a)) as.name("off") else a)))
+    fit_call <- as.call(c(as.name("fit_spatial_rff"), lapply(args[setdiff(names(args), "binned")], function(a) if (is.matrix(a)) as.name("off") else a)))
     fit_call$binned <- as.name("binned")
   } else {
     if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
@@ -135,7 +156,8 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
   pt <- ft <- NULL
   if (null != "none")
     pt <- rff_program_test(fit, binned, bandwidth = bandwidth, n_boot = n_boot, sequential = TRUE, alpha = alpha,
-                           seed = seed, null = null, highpass = if (null == "shift") highpass else NULL)
+                           seed = seed, null = null, highpass = if (null == "shift") highpass else NULL,
+                           crossfit = crossfit, control = control, min_effect = min_effect)
   if (!is.null(pt) && !is.null(highpass)) attr(pt, "highpass") <- highpass
   if (!is.null(pt) && !is.null(bandwidth)) attr(pt, "bandwidth") <- bandwidth
   if (factor_test) ft <- rff_factor_test(fit, binned, n_boot = factor_n_boot, seed = seed, n_cores = n_cores,
@@ -145,7 +167,9 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
     programs = progs, fit = fit, program_test = pt, factor_test = ft, offset_info = off$info,
     settings = list(n_factors = ncol(fit$L), lengthscale = lengthscale, ard = ard, null = null, highpass = highpass,
                     bandwidth = bandwidth, n_boot = n_boot, alpha = alpha, factor_test = factor_test,
-                    factor_n_boot = factor_n_boot, min_r = min_r, seed = seed),
+                    factor_n_boot = factor_n_boot, min_r = min_r, seed = seed,
+                    crossfit = crossfit || !is.null(control) || !is.null(min_effect), control = !is.null(control),
+                    min_effect = min_effect),
     fit_call = fit_call, call = cl,
     elapsed = as.numeric(difftime(Sys.time(), t0, units = "secs"))
   ), class = "rff_programs")
@@ -210,6 +234,12 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
   top_str <- function(v, sgn) { v <- v[is.finite(v)]; v <- if (sgn > 0) v[v > 0] else v[v < 0]
     paste(names(v)[order(-abs(v))][seq_len(min(top_n, length(v)))], collapse = ", ") }
   ngen <- function(v) { a <- abs(v[is.finite(v)]); if (!length(a) || max(a) == 0) 0L else sum(a >= 0.25 * max(a)) }
+  lsp <- fit$lengthscale_profile$summary
+  eff_of <- function(axis, col) {
+    if (is.null(program_test) || is.na(axis) || !(col %in% names(program_test))) return(NA_real_)
+    program_test[[col]][match(axis, as.character(program_test$component))]
+  }
+  ls_of <- function(map, col) if (is.null(lsp) || is.na(map) || !(map %in% lsp$factor)) NA_real_ else lsp[[col]][match(map, lsp$factor)]
   add <- function(status, detected_by, p, axis, axlab, map, r, best_map, best_r, share, v, field) {
     key <- paste0("row", length(rows) + 1)
     rows[[length(rows) + 1]] <<- data.frame(
@@ -221,6 +251,10 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
       uniform_share = if (!is.na(map)) uni[[map]] else NA_real_,
       variance_share = share, n_genes = ngen(v), top_up = top_str(v, 1), top_down = top_str(v, -1),
       key = key, map_label = if (!is.na(map)) mlab[[map]] else NA_character_, axis_label = axlab,
+      lengthscale_lower = ls_of(map, "lower"), lengthscale_upper = ls_of(map, "upper"),
+      heldout_dev_explained = ls_of(map, "heldout_dev_explained"),
+      excess = eff_of(axis, "excess"), excess_lower = eff_of(axis, "excess_lower"), excess_upper = eff_of(axis, "excess_upper"),
+      p_control = eff_of(axis, "p_control"),
       stringsAsFactors = FALSE)
     loads[[key]] <<- v; flds[[key]] <<- field
   }
@@ -228,7 +262,9 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
   if (!is.null(program_test)) {
     comp <- as.character(program_test$component)
     U <- attr(program_test, "scores", exact = TRUE); V <- attr(program_test, "loadings", exact = TRUE)
-    sigc <- comp[!is.na(program_test$p) & program_test$p <= alpha]
+    # calibrated tests (crossfit / control / min_effect) carry their decision in `call`
+    sigc <- if ("call" %in% names(program_test)) comp[program_test$call %in% TRUE] else
+      comp[!is.na(program_test$p) & program_test$p <= alpha]
     R <- matrix(0, length(comp), ncol(Fg), dimnames = list(comp, colnames(Fg)))
     if (!is.null(U) && nrow(U) == sum(keep)) {
       R <- suppressWarnings(abs(stats::cor(U[, comp, drop = FALSE], Fg[keep, , drop = FALSE])))
@@ -280,7 +316,8 @@ rff_programs <- function(binned, offset = NULL, fit = NULL, n_factors = 6, lengt
     add("Cellularity/technical", "uniform share > 0.5", fp[[m]], NA_character_, NA_character_, m, NA_real_, NA_character_, NA_real_, NA_real_, L[, m], Fg[, m])
   cols <- c("program", "status", "detected_by", "p", "p_factor_test", "detection_axis", "program_map", "r", "best_map",
             "best_r", "lengthscale", "program_strength", "uniform_share", "variance_share", "n_genes", "top_up", "top_down",
-            "key", "map_label", "axis_label")
+            "key", "map_label", "axis_label", "lengthscale_lower", "lengthscale_upper", "heldout_dev_explained",
+            "excess", "excess_lower", "excess_upper", "p_control")
   if (!length(rows)) {
     out <- as.data.frame(stats::setNames(replicate(length(cols), logical(0), simplify = FALSE), cols))
     attr(out, "loadings") <- matrix(numeric(0), length(genes), 0, dimnames = list(genes, NULL))

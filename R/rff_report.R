@@ -281,7 +281,7 @@ rff_report <- function(fit, binned, test = NULL, file = "rflvm_report.html", tit
   static <- list(
     input = .rr_html_input(fit, binned, keep, genes, gene_tot, bin_tot, dev_expl, off_desc, offset_info,
                            cells, cellres, known_programs, meta, st, tests, g, cl, mask_irreg),
-    findings = .rr_html_findings(findings),
+    findings = paste0(.rr_html_findings(findings), .rr_html_calibration(fit, test)),
     outputs = .rr_html_outputs(files, out_dir, file, export),
     methods = .rr_html_methods(fit, tests),
     reproduce = paste0("<pre class=\"code\">", .rr_h(repro), "</pre>"),
@@ -431,6 +431,11 @@ rff_report <- function(fit, binned, test = NULL, file = "rflvm_report.html", tit
                         r_factor = if ("r_factor" %in% names(t)) t$r_factor else NA,
                         top_genes = if ("top_genes" %in% names(t)) as.character(t$top_genes) else NA,
                         stringsAsFactors = FALSE)
+      if ("call" %in% names(t)) {                     # calibrated test: the decision is `call`
+        tab$p_use <- ifelse(t$call %in% TRUE, t$p, NA_real_)
+        for (cn in intersect(c("excess", "excess_lower", "excess_upper", "p_control", "p_control_dir"), names(t))) tab[[cn]] <- t[[cn]]
+        null <- if (isTRUE(attr(t, "crossfit", exact = TRUE)$control)) "shift, cross-fitted, vs negative controls" else "shift, cross-fitted"
+      }
       sequential <- .rr_or(attr(t, "sequential", exact = TRUE), anyNA(t$p) || (length(ns) > 1 && !identical(ns[[1]], ns[[2]])))
       nulls <- lapply(seq_len(nrow(tab)), function(k) {
         v <- if (length(ns) >= k && !is.null(ns[[k]])) ns[[k]] else if (length(ns)) ns[[1]] else numeric(0)
@@ -1253,4 +1258,41 @@ rff_report <- function(fit, binned, test = NULL, file = "rflvm_report.html", tit
     "<li>For each significant detection axis, open its best-matching program map (r_factor), e.g. 'D1 is significant &rarr; read it through its best-matching program map M2 (r = 0.81)': if |r| &ge; 0.5, read the program through that map and its loadings.</li>",
     "<li>If |r| &lt; 0.5, the RFLVM did not capture it well: interpret the detection-axis loadings and score map directly. Program maps without a matching significant detection axis are not supported.</li></ol>",
     "</div></details>")
+}
+
+# Length-scale profiles (inline SVG) and effect sizes of a calibrated program
+# test, as static HTML below the key findings.
+.rr_html_calibration <- function(fit, test) {
+  out <- character(0)
+  pr <- fit$lengthscale_profile
+  if (!is.null(pr)) {
+    cv <- pr$curves; sm <- pr$summary
+    svg <- vapply(seq_len(nrow(sm)), function(i) {
+      d <- cv[cv$factor == sm$factor[i], ]
+      x <- log(d$lengthscale); y <- d$gain - max(d$gain); lo <- y - d$delta_se; hi <- y + d$delta_se
+      W <- 260; H <- 150; px <- function(v) 30 + (v - min(x)) / max(diff(range(x)), 1e-9) * (W - 40)
+      yr <- range(c(lo, hi, 0)); py <- function(v) H - 20 - (v - yr[1]) / max(diff(yr), 1e-9) * (H - 35)
+      pts <- paste(sprintf("%.1f,%.1f", px(x), py(y)), collapse = " ")
+      bars <- paste(sprintf("<line x1='%.1f' x2='%.1f' y1='%.1f' y2='%.1f' stroke='#999'/>", px(x), px(x), py(lo), py(hi)), collapse = "")
+      lab <- paste(sprintf("<text x='%.1f' y='%d' font-size='9' text-anchor='middle'>%s</text>", px(x), H - 5, signif(d$lengthscale, 3)), collapse = "")
+      est <- sprintf("<line x1='%.1f' x2='%.1f' y1='10' y2='%d' stroke='#c33' stroke-dasharray='3,2'/>", px(log(sm$lengthscale[i])), px(log(sm$lengthscale[i])), H - 20)
+      paste0("<figure style='display:inline-block;margin:4px'><svg width='", W, "' height='", H, "' role='img'>", bars,
+             "<polyline fill='none' stroke='#2a6' stroke-width='2' points='", pts, "'/>", est, lab, "</svg><figcaption>",
+             .rr_h(sprintf("%s: %.3g (95%% CI %.3g-%.3g)%s", sm$factor[i], sm$lengthscale[i], sm$lower[i], sm$upper[i],
+                           if (sm$at_boundary[i]) ", at grid edge" else "")), "</figcaption></figure>")
+    }, "")
+    out <- c(out, "<h3>Length-scale profiles</h3><p>Held-out log-likelihood gain of each program map over a grid of fixed length scales (relative to the best; bars: bootstrap standard error of the difference). Red line: estimate. Length scales were not learned by the MAP fit; they come from this profile (<code>rff_lengthscale_profile()</code>).</p>",
+             paste(svg, collapse = ""))
+  }
+  tl <- if (is.data.frame(test)) list(test) else if (is.list(test)) test else list()
+  for (t in tl) {
+    if (!is.data.frame(t) || !("call" %in% names(t))) next
+    cols <- intersect(c("component", "share_heldout", "null_heldout", "excess", "excess_lower", "excess_upper", "p", "p_control", "p_control_dir", "call"), names(t))
+    rows <- apply(t[, cols, drop = FALSE], 1, function(r) paste0("<tr>", paste0("<td>", .rr_h(ifelse(is.na(r), "-", r)), "</td>", collapse = ""), "</tr>"))
+    num <- t[, cols, drop = FALSE]; for (cn in cols) if (is.numeric(num[[cn]])) num[[cn]] <- formatC(num[[cn]], digits = 3, format = "g")
+    rows <- apply(num, 1, function(r) paste0("<tr>", paste0("<td>", .rr_h(r), "</td>", collapse = ""), "</tr>"))
+    out <- c(out, "<h3>Effect sizes (cross-fitted program test)</h3><p>Components found on one half of the bins, variance share measured on the other half; <b>excess</b> = held-out share / gene-shift surrogate mean - 1 with a 95% block-bootstrap interval. <code>p_control</code>: share of negative-control windows with at least this excess. A component is called only if <code>call</code> is TRUE.</p>",
+             paste0("<table class='kv'><tr>", paste0("<th>", cols, "</th>", collapse = ""), "</tr>", paste(rows, collapse = ""), "</table>"))
+  }
+  paste(out, collapse = "\n")
 }
