@@ -12,7 +12,8 @@ rff_offset(
   method = c("covariates", "kmeans", "pca"),
   k = 6,
   seed = 1,
-  base = NULL
+  base = NULL,
+  gene_covariates = NULL
 )
 }
 \arguments{
@@ -52,6 +53,17 @@ transcripts. It enters every gene's regression as a fixed offset, so the
 covariates only adjust it; with `covariates = NULL` (and
 `method = "covariates"`) only a gene intercept is fitted. The returned
 offset is `base` plus the fitted adjustment.}
+
+\item{gene_covariates}{Optional matrix, or list of matrices, of
+gene-specific covariates (bins or in-tissue bins x genes, columns matched
+by gene name when named): for gene `j`, column `j` of every matrix is
+added to its regression, with its own coefficient. Use it for nuisance
+structure that differs between genes, e.g. the log ratio of the counts
+expected from neighbouring cells to those expected from the owning cells
+(segmentation spill-over; `attr(, "neighbour")` of
+[rff_expected_offset()] with `neighbour_bandwidth`). Covariates shared by
+all genes (e.g. the per-bin share of nuclear transcripts) go into
+`covariates`; each gene still gets its own coefficient.}
 }
 \value{
 A numeric matrix (in-tissue bins x genes, natural log scale) for
