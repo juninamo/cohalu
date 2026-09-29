@@ -1241,6 +1241,16 @@ rff_fields <- function(fit, coords, x_col = "x", y_col = "y", by = NULL,
 #'   covariates only adjust it; with `covariates = NULL` (and
 #'   `method = "covariates"`) only a gene intercept is fitted. The returned
 #'   offset is `base` plus the fitted adjustment.
+#' @param gene_covariates Optional matrix, or list of matrices, of
+#'   gene-specific covariates (bins or in-tissue bins x genes, columns matched
+#'   by gene name when named): for gene `j`, column `j` of every matrix is
+#'   added to its regression, with its own coefficient. Use it for nuisance
+#'   structure that differs between genes, e.g. the log ratio of the counts
+#'   expected from neighbouring cells to those expected from the owning cells
+#'   (segmentation spill-over; `attr(, "neighbour")` of
+#'   [rff_expected_offset()] with `neighbour_bandwidth`). Covariates shared by
+#'   all genes (e.g. the per-bin share of nuclear transcripts) go into
+#'   `covariates`; each gene still gets its own coefficient.
 #' @details An offset estimated from the same data is not neutral: the richer
 #'   it is, the more of any program it absorbs, and structure it misses is
 #'   called by [rff_program_test()] like any other shared structure (in the
@@ -1265,7 +1275,7 @@ rff_fields <- function(fit, coords, x_col = "x", y_col = "y", by = NULL,
 #' fit$factor_strength
 rff_offset <- function(binned, covariates = NULL, genes = NULL, ridge = 1e-4,
                        method = c("covariates", "kmeans", "pca"), k = 6, seed = 1,
-                       base = NULL) {
+                       base = NULL, gene_covariates = NULL) {
   if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
   method <- match.arg(method)
   keep <- binned$coords$in_tissue
@@ -1281,6 +1291,24 @@ rff_offset <- function(binned, covariates = NULL, genes = NULL, ridge = 1e-4,
       B0 <- B0[, genes, drop = FALSE]
     } else if (ncol(B0) != length(genes)) stop("`base` needs one column per gene.")
     if (any(!is.finite(B0))) stop("`base` must be finite.")
+    if (is.null(covariates) && method == "covariates") covariates <- matrix(numeric(0), sum(keep), 0)
+  }
+  GC <- NULL
+  if (!is.null(gene_covariates)) {
+    if (is.matrix(gene_covariates)) gene_covariates <- list(gene_covariates)
+    if (!is.list(gene_covariates)) stop("`gene_covariates` must be a matrix or a list of matrices (bins x genes).")
+    GC <- lapply(gene_covariates, function(M) {
+      M <- as.matrix(M)
+      if (!is.numeric(M)) stop("`gene_covariates` must be numeric.")
+      if (nrow(M) == nrow(binned$coords)) M <- M[keep, , drop = FALSE]
+      if (nrow(M) != sum(keep)) stop("Each of `gene_covariates` needs one row per bin or per in-tissue bin.")
+      if (!is.null(colnames(M))) {
+        if (!all(genes %in% colnames(M))) stop("A matrix of `gene_covariates` lacks columns for some genes.")
+        M <- M[, genes, drop = FALSE]
+      } else if (ncol(M) != length(genes)) stop("Each of `gene_covariates` needs one column per gene.")
+      if (any(!is.finite(M))) stop("`gene_covariates` must be finite.")
+      M
+    })
     if (is.null(covariates) && method == "covariates") covariates <- matrix(numeric(0), sum(keep), 0)
   }
   if (method != "covariates") {
@@ -1299,8 +1327,16 @@ rff_offset <- function(binned, covariates = NULL, genes = NULL, ridge = 1e-4,
   X <- sweep(X, 2, sc, "/")
   Y <- as.matrix(binned$counts[keep, genes, drop = FALSE])
   la <- 2 * log(binned$grid$bin_size)
-  P <- ncol(X); pen <- c(0, rep(ridge * nrow(X), P - 1))
+  X0 <- X
   out <- vapply(seq_along(genes), function(j) {
+    X <- X0
+    if (!is.null(GC)) {                              # gene-specific covariates: column j of each matrix
+      G <- vapply(GC, function(M) M[, j], numeric(nrow(X0)))
+      G <- matrix(G, nrow = nrow(X0))
+      gs <- apply(G, 2, stats::sd); ok <- is.finite(gs) & gs > 0
+      if (any(ok)) X <- cbind(X0, sweep(G[, ok, drop = FALSE], 2, gs[ok], "/"))
+    }
+    P <- ncol(X); pen <- c(0, rep(ridge * nrow(X), P - 1))
     y <- Y[, j]
     b0 <- if (is.null(B0)) 0 else B0[, j]
     lab <- la + b0
@@ -2185,10 +2221,18 @@ print.spatial_rff_joint <- function(x, ...) {
 #'   whole section), used for \eqn{\rho}; default: computed from `tx`.
 #' @param pseudo Added to the expected counts, as a fraction of each gene's
 #'   mean expected count per in-tissue bin, to keep the log finite.
+#' @param neighbour_bandwidth Optional Gaussian bandwidth (coordinate units,
+#'   e.g. 8-10 um): also compute the counts expected from the cell types of
+#'   the *neighbouring* bins (own bin excluded), returned as attribute
+#'   `neighbour` (same scale as the offset). `neighbour - offset` is the log
+#'   ratio of neighbour-expected to owner-expected counts; passed to
+#'   `rff_offset(gene_covariates = )` it absorbs segmentation spill-over and
+#'   mixed cells (transcripts of one cell type assigned to its neighbours).
 #'
 #' @return A numeric matrix (all bins x modelled genes, natural log scale per
 #'   unit area) for `fit_spatial_rff(offset = )` or `rff_offset(base = )`,
-#'   with attribute `type_counts` (bins x types reference counts).
+#'   with attribute `type_counts` (bins x types reference counts) and, with
+#'   `neighbour_bandwidth`, attribute `neighbour`.
 #' @seealso [rff_offset()], [fit_spatial_rff()]
 #' @export
 #' @examples
@@ -2199,8 +2243,11 @@ print.spatial_rff_joint <- function(x, ...) {
 #' off <- rff_expected_offset(b2, tx)
 #' dim(off)
 rff_expected_offset <- function(binned, tx, type_col = "type", x_col = "x", y_col = "y", gene_col = "gene",
-                                reference_genes = NULL, profiles = NULL, pseudo = 0.05) {
+                                reference_genes = NULL, profiles = NULL, pseudo = 0.05,
+                                neighbour_bandwidth = NULL) {
   if (!inherits(binned, "binned_transcripts")) stop("`binned` must come from bin_transcripts().")
+  if (!is.null(neighbour_bandwidth) && (!is.numeric(neighbour_bandwidth) || length(neighbour_bandwidth) != 1 || neighbour_bandwidth <= 0))
+    stop("`neighbour_bandwidth` must be a positive number (coordinate units).")
   tx <- as.data.frame(tx)
   miss <- setdiff(c(type_col, x_col, y_col, gene_col), colnames(tx))
   if (length(miss)) stop("Columns not found in `tx`: ", paste(miss, collapse = ", "))
@@ -2238,6 +2285,20 @@ rff_expected_offset <- function(binned, tx, type_col = "type", x_col = "x", y_co
   out <- log(E) - 2 * log(g$bin_size)
   dimnames(out) <- list(NULL, genes)
   attr(out, "type_counts") <- Nbt
+  if (!is.null(neighbour_bandwidth)) {
+    # expected counts from the cell types of the NEIGHBOURING bins (Gaussian weights, own bin excluded):
+    # what segmentation spill-over or mixed cells would add to a bin
+    h <- neighbour_bandwidth / g$bin_size
+    one <- matrix(0, 2 * ceiling(4 * h) + 3, 2 * ceiling(4 * h) + 3); cc <- (nrow(one) + 1) / 2; one[cc, cc] <- 1
+    w0 <- .smooth_grid(one, h)[cc, cc]
+    Nnb <- vapply(seq_len(ncol(Nbt)), function(t) {
+      m <- matrix(Nbt[, t], g$nx, g$ny); as.vector((.smooth_grid(m, h) - w0 * m) / (1 - w0)) }, numeric(nb))
+    Nnb <- pmax(matrix(Nnb, nb), 0)
+    En <- Nnb %*% t(R)
+    En <- sweep(En, 2, pseudo * pmax(colMeans(En[keep, , drop = FALSE]), 1e-6), "+")
+    nbm <- log(En) - 2 * log(g$bin_size); dimnames(nbm) <- list(NULL, genes)
+    attr(out, "neighbour") <- nbm
+  }
   out
 }
 
