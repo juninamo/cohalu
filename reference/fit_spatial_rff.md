@@ -28,7 +28,7 @@ fit_spatial_rff(
   offset_genes = NULL,
   ard = 0,
   n_features = 64,
-  family = c("nb", "poisson"),
+  family = c("nb", "poisson", "binomial", "multinomial"),
   max_iter = 500,
   seed = 1,
   verbose = FALSE,
@@ -38,7 +38,11 @@ fit_spatial_rff(
   basis = c("random", "grid"),
   learn_lengthscales = TRUE,
   l1 = 0,
-  loadings = NULL
+  loadings = NULL,
+  trials = NULL,
+  start = NULL,
+  ls_grid = 5 * 2^(0:6),
+  profile = list()
 )
 ```
 
@@ -55,7 +59,18 @@ fit_spatial_rff(
 - lengthscales:
 
   Initial length scales (recycled to \`K\`); spreading them over scales
-  breaks the symmetry between factors.
+  breaks the symmetry between factors. With \`learn_lengthscales =
+  FALSE\` (recommended) they are the fixed length scales. \`"profile"\`
+  estimates one length scale per factor by held-out likelihood: a first
+  fit with fixed length scale \`profile\$init\` (default 20) finds the
+  programs, \[rff_lengthscale_profile()\] profiles each program over
+  \`ls_grid\`, and the model is refitted with the profiled length scales
+  (starting from the first fit); the profile is returned as
+  \`lengthscale_profile\`. Learned length scales (\`learn_lengthscales =
+  TRUE\`) are \*\*not\*\* estimates: they are held near their initial
+  values by a log-normal prior centred there, and the MAP objective
+  (which does not integrate over the field weights) favours the smallest
+  length scale; in spike-in tests they stayed at their initial values.
 
 - density_lengthscale:
 
@@ -111,8 +126,22 @@ fit_spatial_rff(
 
 - family:
 
-  \`"nb"\` (negative binomial, gene-specific dispersion) or
-  \`"poisson"\`.
+  \`"nb"\` (negative binomial, gene-specific dispersion), \`"poisson"\`
+  or \`"binomial"\`. \`"binomial"\` models \`y\` as successes out of
+  \`trials\` with a logit link, \\\mathrm{logit}\\p\_{bj} = o\_{bj} +
+  \alpha_j + \sigma_0 f_0(u_b) + \sum_k L\_{jk} f_k(u_b)\\ (no bin
+  area), e.g. the nuclear transcripts of each gene and bin out of all
+  its transcripts there. Use it for fractions: with a log link and
+  \`log(trials)\` as offset, a field shared by all genes cannot raise
+  genes whose fraction is already near 1, so a spurious program with
+  loadings that decrease with each gene's overall fraction appears
+  (log-link saturation). \`"multinomial"\` models each bin's counts over
+  the modelled genes given the bin's total (a free effect per bin,
+  profiled out: Poisson with a bin intercept), so everything that scales
+  all genes of a bin together - cellularity, transcriptome size,
+  capture - drops out and no cellularity field is fitted. Supported by
+  the gene-shift and cross-fitted program tests and the length-scale
+  profiles.
 
 - max_iter:
 
@@ -196,6 +225,31 @@ fit_spatial_rff(
   \`amplitude\` in this tissue (the standard deviation of the fitted
   field, returned as \`amplitude\`).
 
+- trials:
+
+  With \`family = "binomial"\`: numeric matrix of trials (bins or
+  in-tissue bins x genes, columns matched by name when named), \`\>=
+  binned\$counts\`.
+
+- start:
+
+  Optional earlier fit to the same bins and genes with the same number
+  of factors: its loadings and (projected) factor fields are the
+  starting values of the factors (used by \`lengthscales = "profile"\`
+  to refit with new length scales without relabelling the factors).
+
+- ls_grid:
+
+  Length scales (coordinate units) profiled with \`lengthscales =
+  "profile"\`.
+
+- profile:
+
+  List of settings for \`lengthscales = "profile"\`: \`init\` (length
+  scale of the first fit) and further arguments of
+  \[rff_lengthscale_profile()\] (e.g. \`folds\`, \`n_cores\`,
+  \`factors\`).
+
 ## Value
 
 An object of class \`spatial_rff_fit\` with the estimates (\`alpha\`,
@@ -206,7 +260,8 @@ genes, which cannot be told apart from cellularity), the random
 frequencies, the genes, the settings (\`settings\`, used by
 \[rff_factor_test()\]) and convergence information; with fixed
 \`loadings\`, also \`amplitude\` (standard deviation of each program's
-fitted field; \`NULL\` otherwise).
+fitted field; \`NULL\` otherwise). With \`lengthscales = "profile"\`,
+also \`lengthscale_profile\` (see \[rff_lengthscale_profile()\]).
 
 ## Details
 
@@ -219,6 +274,22 @@ evaluation). The optimiser usually stops at \`max_iter\` rather than at
 convergence, so the loadings - and hence \`factor_strength\` - depend on
 \`max_iter\`; compare fits (and bootstrap refits) only at the same
 \`max_iter\`.
+
+## When to use / limitations
+
+With an \`offset\` of known structure this is the residual RFLVM, a tool
+for discovering spatial gene programs without pre-specified genes and
+for mapping programs with fixed \`loadings\` in new tissue (test the
+transfer with \[rff_transfer_test()\]). Most users should start from
+\[rff_programs()\]. Learned length scales (\`learn_lengthscales =
+TRUE\`) stay near their initial values and are not estimates;
+\`lengthscales = "profile"\` ranks reaches when bins average several
+cells (16-32 um), but does not measure reach at 8-um bins. The fitted
+factors are not a test: calibrate with \[rff_program_test()\] and
+negative-control regions. For a known gradient or gene set, supervised
+models (per-gene GLM on distance, C-SIDE) or \[pcf_cross()\] are simpler
+and were at least as powerful. \`family = "multinomial"\` gave no gain
+over the negative binomial model on real tissue.
 
 ## References
 

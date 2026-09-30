@@ -53,6 +53,7 @@ per-window components is needed."><meta property="og:image" content="https://jun
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-methods" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Methods</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-methods"><li><a class="dropdown-item" href="../articles/algorithms.html">Algorithm reference</a></li>
+    <li><a class="dropdown-item" href="../articles/rflvm_when_to_use.html">When to use the residual RFLVM</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -99,7 +100,11 @@ per-window components is needed.</p>
 <span>  alpha <span class="op">=</span> <span class="fl">0.05</span>,</span>
 <span>  seed <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"equal"</span>, <span class="st">"bins"</span><span class="op">)</span>,</span>
-<span>  n_cores <span class="op">=</span> <span class="fl">1</span></span>
+<span>  n_cores <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  crossfit <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  crossfit_block <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  control <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  n_group_null <span class="op">=</span> <span class="fl">499</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -159,6 +164,39 @@ the same.</p></dd>
 <dd><p>Cores for the surrogates (forked with
 [parallel::mclapply()]; serial on Windows). Each surrogate data set has
 its own seed, so results do not depend on `n_cores`.</p></dd>
+
+
+<dt id="arg-crossfit">crossfit<a class="anchor" aria-label="anchor" href="#arg-crossfit"></a></dt>
+<dd><p>Discovery only. `TRUE`: cross-fitted version (as
+`rff_program_test(crossfit = TRUE)`). The bins of every window are
+split into two halves (checkerboard of `crossfit_block` blocks);
+components are found on the pooled covariance of one half and their
+pooled variance share is measured on the other half, both ways; the
+same pipeline on gene-shift surrogates gives `p`; `excess` is the
+weighted mean over windows of each window's held-out excess (with a
+window-bootstrap interval, `excess_lower` / `excess_upper`); `call`
+is the decision. Robust residual processing is used.</p></dd>
+
+
+<dt id="arg-crossfit-block">crossfit_block<a class="anchor" aria-label="anchor" href="#arg-crossfit-block"></a></dt>
+<dd><p>Side of the checkerboard blocks (default 12 bins or
+that of `control`).</p></dd>
+
+
+<dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
+<dd><p>Output of [rff_control_reference()] for negative-control
+windows (implies `crossfit = TRUE`): `excess_vs_control` is the median
+over the windows of each window's held-out excess along the component
+direction, standardised by the mean and standard deviation of the
+control windows' excess along the same direction (robust to single
+windows with idiosyncratic structure), and
+`p_control` compares it with `n_group_null` pseudo-target groups of
+control windows (same number of windows, tested against the remaining
+controls in the same way); `call` also requires `p_control &lt;= alpha`.</p></dd>
+
+
+<dt id="arg-n-group-null">n_group_null<a class="anchor" aria-label="anchor" href="#arg-n-group-null"></a></dt>
+<dd><p>Number of pseudo-target groups for `p_control`.</p></dd>
 
 </dl></div>
     <div class="section level2">

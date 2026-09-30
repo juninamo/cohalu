@@ -75,6 +75,8 @@ log-Gaussian Cox process factor model (after Gundersen et al. 2021).
   : Gene-by-gene co-localization of transcripts
 - [`colocalization_modules()`](https://juninamo.github.io/cohalu/reference/colocalization_modules.md)
   : Cluster genes into co-localization modules
+- [`colocalization_submodules()`](https://juninamo.github.io/cohalu/reference/colocalization_submodules.md)
+  : Split a co-localization module into sub-modules
 - [`module_enrichment()`](https://juninamo.github.io/cohalu/reference/module_enrichment.md)
   : Interpret co-localization modules with gene sets
 - [`module_enrichr()`](https://juninamo.github.io/cohalu/reference/module_enrichr.md)
@@ -100,6 +102,18 @@ log-Gaussian Cox process factor model (after Gundersen et al. 2021).
 - [`rff_program_test_joint()`](https://juninamo.github.io/cohalu/reference/rff_program_test_joint.md)
   : Gene-program test across several tissues or windows with shared
   loadings
+- [`rff_control_reference()`](https://juninamo.github.io/cohalu/reference/rff_control_reference.md)
+  : Negative-control reference for calibrated program tests
+- [`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md)
+  : Calibrated test for a gene program transferred to new data
+- [`rff_lengthscale_profile()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.md)
+  : Length scale of each spatial program by held-out likelihood
+- [`rff_reach()`](https://juninamo.github.io/cohalu/reference/rff_reach.md)
+  : Reach (decay length) implied by a profiled length scale
+- [`rff_lengthscale_vi()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_vi.md)
+  : Length scale of each program by the variational evidence (ELBO)
+- [`rff_lengthscale_mcmc()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_mcmc.md)
+  : Posterior of a program's length scale by MCMC (reference)
 - [`rff_expected_offset()`](https://juninamo.github.io/cohalu/reference/rff_expected_offset.md)
   : Offset from the cell types that own each bin's transcripts
 - [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)

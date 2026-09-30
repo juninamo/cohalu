@@ -58,6 +58,7 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-methods" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Methods</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-methods">
 <li><a class="dropdown-item" href="articles/algorithms.html">Algorithm reference</a></li>
+    <li><a class="dropdown-item" href="articles/rflvm_when_to_use.html">When to use the residual RFLVM</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
@@ -168,8 +169,9 @@
 <li>
 <code><a href="reference/colocalization_per_sample.html">colocalization_per_sample()</a></code> feeds <code><a href="reference/compare_groups.html">compare_groups()</a></code>
 </li>
-<li>Unsupervised, gene-level: <code><a href="reference/colocalization_gene_matrix.html">colocalization_gene_matrix()</a></code> (gene x gene log2 O/E of transcript pairs within a radius), <code><a href="reference/colocalization_modules.html">colocalization_modules()</a></code> (co-localizing gene modules), <code><a href="reference/module_enrichment.html">module_enrichment()</a></code> (any pathways or marker lists) and <code><a href="reference/module_enrichr.html">module_enrichr()</a></code> (enrichR)</li>
+<li>Unsupervised, gene-level: <code><a href="reference/colocalization_gene_matrix.html">colocalization_gene_matrix()</a></code> (gene x gene log2 O/E of transcript pairs within a radius), <code><a href="reference/colocalization_modules.html">colocalization_modules()</a></code> (co-localizing gene modules; <code>method = "profile"</code> groups genes by co-localization profile), <code><a href="reference/colocalization_submodules.html">colocalization_submodules()</a></code> (split a large module into sub-populations), <code><a href="reference/module_enrichment.html">module_enrichment()</a></code> (any pathways or marker lists) and <code><a href="reference/module_enrichr.html">module_enrichr()</a></code> (enrichR)</li>
 </ul>
+<p><em>When to use the residual RFLVM.</em> It is a discovery-and-transfer tool: use <code><a href="reference/rff_programs.html">rff_programs()</a></code> to find multi-gene spatial programs beyond known structure without pre-specifying genes or structures, calibrate every call against negative-control regions of the same tissue (<code><a href="reference/rff_control_reference.html">rff_control_reference()</a></code>; the gene-shift test alone calls almost everything on real data), and validate programs by <code><a href="reference/rff_transfer_test.html">rff_transfer_test()</a></code> on held-out patients or cohorts. Expect cell-type / sub-lineage residuals unless the offset is rich (inspect with <code><a href="reference/rff_report.html">rff_report()</a></code>), report reach only as ranks (<code><a href="reference/rff_reach.html">rff_reach()</a></code>), and prefer supervised tools (per-gene GLM on distance, C-SIDE, <code><a href="reference/pcf_cross.html">pcf_cross()</a></code>) for known questions. See the article <a href="https://juninamo.github.io/cohalu/articles/rflvm_when_to_use.html">When to use the residual RFLVM</a>.</p>
 </div>
 <div class="section level2">
 <h2 id="how-cohalu-fits-with-related-tools">How COHALU fits with related tools<a class="anchor" aria-label="anchor" href="#how-cohalu-fits-with-related-tools"></a>
@@ -219,7 +221,7 @@
 <span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/bin_transcripts.html">bin_transcripts</a></span><span class="op">(</span><span class="va">px</span>, bin_size <span class="op">=</span> <span class="fl">4</span>, x_col <span class="op">=</span> <span class="st">"X"</span>, y_col <span class="op">=</span> <span class="st">"Y"</span>, gene_col <span class="op">=</span> <span class="st">"K1"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/pcf_matrix.html">pcf_matrix</a></span><span class="op">(</span><span class="va">b</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>F1 <span class="op">=</span> <span class="st">"1"</span>, F2 <span class="op">=</span> <span class="st">"2"</span>, F3 <span class="op">=</span> <span class="st">"3"</span><span class="op">)</span>, r_max <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span></code></pre></div>
 </li>
-<li><p><strong>A generative model when needed.</strong> <code><a href="reference/fit_spatial_rff.html">fit_spatial_rff()</a></code> fits a random-feature log-Gaussian Cox process (Gundersen, Zhang &amp; Engelhardt, AISTATS 2021) that learns spatial length scales and separates cellularity from composition.</p></li>
+<li><p><strong>A generative model when needed.</strong> <code><a href="reference/fit_spatial_rff.html">fit_spatial_rff()</a></code> fits a random-feature log-Gaussian Cox process (Gundersen, Zhang &amp; Engelhardt, AISTATS 2021) that separates cellularity from composition and, with an offset of known structure, finds residual gene programs to validate by transfer to new data.</p></li>
 </ul>
 </div>
 <div class="section level2">

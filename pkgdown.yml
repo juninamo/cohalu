@@ -4,10 +4,11 @@ pkgdown_sha: ~
 articles:
   algorithms: algorithms.html
   articles/case_control_tutorial: case_control_tutorial.html
+  articles/rflvm_when_to_use: rflvm_when_to_use.html
   articles/segmentation_free_tutorial: segmentation_free_tutorial.html
   articles/SNA_tutorial_10Xdata: SNA_tutorial_10Xdata.html
   articles/SNA_tutorial_simulation: SNA_tutorial_simulation.html
-last_built: 2026-09-29T09:17Z
+last_built: 2026-09-30T20:59Z
 urls:
   reference: https://juninamo.github.io/cohalu/reference
   article: https://juninamo.github.io/cohalu/articles

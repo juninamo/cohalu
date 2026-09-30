@@ -7,6 +7,7 @@
 <url><loc>https://juninamo.github.io/cohalu/articles/algorithms.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/articles/case_control_tutorial.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/articles/index.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/articles/rflvm_when_to_use.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/articles/segmentation_free_tutorial.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/authors.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/index.html</loc></url>
@@ -18,6 +19,7 @@
 <url><loc>https://juninamo.github.io/cohalu/reference/colocalization_gene_matrix.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/colocalization_modules.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/colocalization_per_sample.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/colocalization_submodules.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/compare_groups.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/compute_co_occurrence_ratio.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/compute_count.html</loc></url>
@@ -47,15 +49,21 @@
 <url><loc>https://juninamo.github.io/cohalu/reference/plot_pair_boxplot.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/plot_volcano_groups.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/read_xenium_transcripts.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_control_reference.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_expected_offset.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_factor_test.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_fields.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_lengthscale_mcmc.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_lengthscale_vi.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_offset.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_pair_correlation.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_program_test.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_program_test_joint.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_programs.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_reach.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/rff_report.html</loc></url>
+<url><loc>https://juninamo.github.io/cohalu/reference/rff_transfer_test.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/search_interaction_spot.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/sim_to_seurat.html</loc></url>
 <url><loc>https://juninamo.github.io/cohalu/reference/simulate_transcripts.html</loc></url>

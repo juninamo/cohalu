@@ -125,11 +125,34 @@ The notebooks behind these pages are in
   [`colocalization_gene_matrix()`](https://juninamo.github.io/cohalu/reference/colocalization_gene_matrix.md)
   (gene x gene log2 O/E of transcript pairs within a radius),
   [`colocalization_modules()`](https://juninamo.github.io/cohalu/reference/colocalization_modules.md)
-  (co-localizing gene modules),
+  (co-localizing gene modules; `method = "profile"` groups genes by
+  co-localization profile),
+  [`colocalization_submodules()`](https://juninamo.github.io/cohalu/reference/colocalization_submodules.md)
+  (split a large module into sub-populations),
   [`module_enrichment()`](https://juninamo.github.io/cohalu/reference/module_enrichment.md)
   (any pathways or marker lists) and
   [`module_enrichr()`](https://juninamo.github.io/cohalu/reference/module_enrichr.md)
   (enrichR)
+
+*When to use the residual RFLVM.* It is a discovery-and-transfer tool:
+use
+[`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md)
+to find multi-gene spatial programs beyond known structure without
+pre-specifying genes or structures, calibrate every call against
+negative-control regions of the same tissue
+([`rff_control_reference()`](https://juninamo.github.io/cohalu/reference/rff_control_reference.md);
+the gene-shift test alone calls almost everything on real data), and
+validate programs by
+[`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md)
+on held-out patients or cohorts. Expect cell-type / sub-lineage
+residuals unless the offset is rich (inspect with
+[`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md)),
+report reach only as ranks
+([`rff_reach()`](https://juninamo.github.io/cohalu/reference/rff_reach.md)),
+and prefer supervised tools (per-gene GLM on distance, C-SIDE,
+[`pcf_cross()`](https://juninamo.github.io/cohalu/reference/pcf_cross.md))
+for known questions. See the article [When to use the residual
+RFLVM](https://juninamo.github.io/cohalu/articles/rflvm_when_to_use.html).
 
 ## How COHALU fits with related tools
 
@@ -185,8 +208,9 @@ What COHALU adds:
 - **A generative model when needed.**
   [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
   fits a random-feature log-Gaussian Cox process (Gundersen, Zhang &
-  Engelhardt, AISTATS 2021) that learns spatial length scales and
-  separates cellularity from composition.
+  Engelhardt, AISTATS 2021) that separates cellularity from composition
+  and, with an offset of known structure, finds residual gene programs
+  to validate by transfer to new data.
 
 ## Validation
 

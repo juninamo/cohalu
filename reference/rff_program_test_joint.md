@@ -28,7 +28,11 @@ rff_program_test_joint(
   alpha = 0.05,
   seed = 1,
   weights = c("equal", "bins"),
-  n_cores = 1
+  n_cores = 1,
+  crossfit = FALSE,
+  crossfit_block = NULL,
+  control = NULL,
+  n_group_null = 499
 )
 ```
 
@@ -84,6 +88,39 @@ rff_program_test_joint(
   Cores for the surrogates (forked with \[parallel::mclapply()\]; serial
   on Windows). Each surrogate data set has its own seed, so results do
   not depend on \`n_cores\`.
+
+- crossfit:
+
+  Discovery only. \`TRUE\`: cross-fitted version (as
+  \`rff_program_test(crossfit = TRUE)\`). The bins of every window are
+  split into two halves (checkerboard of \`crossfit_block\` blocks);
+  components are found on the pooled covariance of one half and their
+  pooled variance share is measured on the other half, both ways; the
+  same pipeline on gene-shift surrogates gives \`p\`; \`excess\` is the
+  weighted mean over windows of each window's held-out excess (with a
+  window-bootstrap interval, \`excess_lower\` / \`excess_upper\`);
+  \`call\` is the decision. Robust residual processing is used.
+
+- crossfit_block:
+
+  Side of the checkerboard blocks (default 12 bins or that of
+  \`control\`).
+
+- control:
+
+  Output of \[rff_control_reference()\] for negative-control windows
+  (implies \`crossfit = TRUE\`): \`excess_vs_control\` is the median
+  over the windows of each window's held-out excess along the component
+  direction, standardised by the mean and standard deviation of the
+  control windows' excess along the same direction (robust to single
+  windows with idiosyncratic structure), and \`p_control\` compares it
+  with \`n_group_null\` pseudo-target groups of control windows (same
+  number of windows, tested against the remaining controls in the same
+  way); \`call\` also requires \`p_control \<= alpha\`.
+
+- n_group_null:
+
+  Number of pseudo-target groups for \`p_control\`.
 
 ## Value
 

@@ -55,6 +55,7 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-methods" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Methods</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-methods">
 <li><a class="dropdown-item" href="../articles/algorithms.html">Algorithm reference</a></li>
+    <li><a class="dropdown-item" href="../articles/rflvm_when_to_use.html">When to use the residual RFLVM</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -820,6 +821,10 @@ without factors, refits, and compares each factor’s strength
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mrow><mo stretchy="true" form="prefix">‖</mo><msub><mi>L</mi><mrow><mi>⋅</mi><mi>k</mi></mrow></msub><mo stretchy="true" form="postfix">‖</mo></mrow><mn>2</mn></msub><annotation encoding="application/x-tex">\lVert L_{\cdot k} \rVert_2</annotation></semantics></math>
 with the largest null factor (parametric bootstrap, family-wise over
 factors).</p>
+<p>When to use the residual model, how to calibrate it against
+negative-control regions and validate programs by transfer, and what it
+did and did not show on real tissue are summarised in the article <a href="rflvm_when_to_use.html">When to use the residual RFLVM (and when
+not)</a>.</p>
 </div>
 <div class="section level4">
 <h4 id="gene-level-modules-colocalization_gene_matrix-colocalization_modules-module_enrichment">Gene-level modules — <code>colocalization_gene_matrix()</code>,
@@ -839,8 +844,16 @@ E_{ab} = \frac{n_a n_b}{N (N - 1)}\, P_{\mathrm{all}},
 is 0 without co-localization. Genes are clustered (average linkage,
 distance
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">max</mi><mo>⁡</mo></mrow><mi>M</mi><mo>−</mo><mi>M</mi></mrow><annotation encoding="application/x-tex">\max M - M</annotation></semantics></math>)
-into modules; <code><a href="../reference/module_enrichment.html">module_enrichment()</a></code> tests any gene sets per
-module with the hypergeometric test and BH.</p>
+into modules. Large modules can chain (populations that share a niche);
+with <code>method = "profile"</code>, or per module with
+<code><a href="../reference/colocalization_submodules.html">colocalization_submodules()</a></code>, genes are instead grouped by
+their co-localization profiles (rows of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>M</mi><annotation encoding="application/x-tex">M</annotation></semantics></math>;
+distance
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>−</mo><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">r</mi></mrow></mrow><annotation encoding="application/x-tex">1 - \mathrm{cor}</annotation></semantics></math>,
+Ward linkage), with the number of groups chosen by the mean silhouette
+width. <code><a href="../reference/module_enrichment.html">module_enrichment()</a></code> tests any gene sets per module
+with the hypergeometric test and BH.</p>
 </div>
 </div>
 <div class="section level2">

@@ -20,7 +20,8 @@ module_enrichr(
 
 - modules:
 
-  Output of \[colocalization_modules()\].
+  Output of \[colocalization_modules()\] or
+  \[colocalization_submodules()\].
 
 - databases:
 

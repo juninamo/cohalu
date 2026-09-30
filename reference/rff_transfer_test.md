@@ -1,0 +1,133 @@
+# Calibrated test for a gene program transferred to new data
+
+\*\*Experimental.\*\* Tests whether gene programs learned elsewhere
+(fixed loadings, e.g. from another data set, platform or patient group)
+are active in new tissue, against a \*\*permuted-loading null\*\*: the
+target data are left untouched, so every gene keeps its counts, its
+marginal distribution and its own spatial structure, and only the
+assignment of the loadings to genes is permuted (within strata of gene
+abundance). A program counts as transferred if its genes co-vary in the
+target more than random gene sets with the same loading values.
+
+## Usage
+
+``` r
+rff_transfer_test(
+  loadings,
+  fits,
+  binned,
+  statistic = c("score", "heldout"),
+  n_perm = NULL,
+  strata = 5,
+  bandwidth = NULL,
+  highpass = NULL,
+  lengthscale = 20,
+  folds = 4,
+  max_iter = 150,
+  seed = 1,
+  n_cores = 1,
+  scale = c("log", "residual")
+)
+```
+
+## Arguments
+
+- loadings:
+
+  Numeric matrix, genes (row names) x programs, on the log scale (e.g.
+  \`fit\$L\` or \[fit_spatial_rff_joint()\]\`\$loadings\`); a named
+  vector is one program. Genes absent from the target are dropped.
+
+- fits:
+
+  A \[fit_spatial_rff()\] fit of the target tissue (its offset and
+  intercepts give the null mean; the target's own factors are not used)
+  or a list of fits (windows; statistics are averaged over windows with
+  one permutation applied to all).
+
+- binned:
+
+  The matching \`binned_transcripts\` object(s).
+
+- statistic:
+
+  \`"score"\` or \`"heldout"\`.
+
+- n_perm:
+
+  Number of permutations.
+
+- strata:
+
+  Number of gene-abundance strata (quantiles of the mean count per bin
+  in the target) within which loadings are permuted.
+
+- bandwidth, highpass:
+
+  Residual processing for \`"score"\` (as in \[rff_program_test()\]).
+
+- lengthscale, folds, max_iter:
+
+  Field length scale, cross-validation folds and iterations for
+  \`"heldout"\`.
+
+- seed:
+
+  Random seed.
+
+- n_cores:
+
+  Cores for \`"heldout"\` refits.
+
+- scale:
+
+  \`"log"\` (default): \`loadings\` are log-scale effects (as in
+  \`fit\$L\`); \`"residual"\`: they are directions of the processed
+  residuals, e.g. the \`loadings\` attribute of \[rff_program_test()\]
+  or \[rff_program_test_joint()\].
+
+## Value
+
+A data frame with one row per program: \`program\`, \`n_genes\` (genes
+shared with the target), \`statistic\`, \`perm_mean\`, \`excess\`
+(statistic / permutation mean - 1), \`z\`, \`p\`; attribute \`null\`
+(programs x permutations).
+
+## Details
+
+Statistics: \* \`"score"\` (default): share of the processed residual
+variance of the target (the residuals of the gene-shift test: Pearson
+residuals under the fit's null mean, smoothed, optional high-pass,
+shared multiplicative direction removed, genes standardised) along the
+program direction (log-scale loadings times the square root of each
+gene's mean count, unit norm). It is the score statistic of a rank-one
+program with fixed loadings, fast enough for thousands of permutations.
+\* \`"heldout"\`: held-out log-likelihood gain of a fitted program field
+with the loadings held fixed (length scale \`lengthscale\`) over the
+model without it, by \`folds\`-fold cross-validation over bins
+(likelihood-ratio type; slow, use fewer permutations).
+
+The field amplitude of a fixed-loading fit (\`fit_spatial_rff(loadings =
+)\$amplitude\`) is not a transfer statistic: permuted loadings reached
+similar amplitudes on real tissue, because any direction picks up some
+shared residual structure.
+
+## When to use / limitations
+
+This is the validation step of the residual RFLVM: discover programs in
+one set of patients, fix their loadings, and test them in held-out
+patients, another cohort, panel or platform. In simulation the score
+statistic detected 20/20 true transfers and 0/20 targets without the
+program. It tests activity, not specificity: a program with shared
+residual structure (e.g. a cell-type residual) can transfer to every
+region of a data set, so also test negative-control regions of the
+target and compare. In the synovial evaluation a discovered perivascular
+fibroblast program transferred to an independent cohort in perivascular
+but not control windows, whereas on Visium HD all programs transferred
+everywhere and added no support. With few target windows the p-values
+are limited by \`n_perm\` and by the number of windows.
+
+## See also
+
+\[fit_spatial_rff()\] (\`loadings\`), \[rff_program_test_joint()\]
+(confirmatory mode, gene-shift null)

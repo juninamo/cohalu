@@ -2,6 +2,216 @@
 
 ## cohalu 0.99.3
 
+### Documentation
+
+- New article “When to use the residual RFLVM (and when not)”
+  (`vignettes/articles/rflvm_when_to_use.Rmd`): positions the residual
+  RFLVM as a discovery-and-transfer tool, with a decision table
+  (supervised distance GLM / C-SIDE /
+  [`pcf_cross()`](https://juninamo.github.io/cohalu/reference/pcf_cross.md)
+  for known questions), the recommended workflow
+  ([`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md)
+  with a rich offset, negative-control calibration with
+  [`rff_control_reference()`](https://juninamo.github.io/cohalu/reference/rff_control_reference.md),
+  [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md),
+  [`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md)
+  on held-out data), pitfalls and a summary of the real-data validation.
+  [`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md),
+  [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md),
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md),
+  [`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md)
+  and
+  [`rff_lengthscale_profile()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.md)
+  gain a “When to use / limitations” section, and the README a short
+  positioning paragraph. No code changes.
+
+### Co-localization sub-modules
+
+- `colocalization_modules(method = "profile")` clusters genes by the
+  similarity of their co-localization profiles (rows of the O/E matrix;
+  distance 1 - cor, Ward.D2), with the number of modules chosen by mean
+  silhouette when `n_modules = NULL`. Average linkage on max - O/E stays
+  the default.
+- New
+  `colocalization_submodules(M, modules, module = "M1", k = NULL, k_range = 2:8)`
+  splits one module into sub-modules by profile similarity (k by mean
+  silhouette) and returns membership, within-sub-module O/E, the
+  silhouette table and top genes. Large modules of populations that
+  share a niche chain under average linkage (cuts only peel off single
+  genes): a 170-gene synovial module (8-um bins, r = 20 um) split into
+  four sub-modules (lining FLS, macrophage, MHC-II antigen-presenting,
+  diffuse; mean silhouette 0.53). In simulations with two
+  sub-populations in one co-localizing group, average linkage merged
+  them and the profile split separated them.
+- [`module_enrichment()`](https://juninamo.github.io/cohalu/reference/module_enrichment.md)
+  accepts the output of
+  [`colocalization_submodules()`](https://juninamo.github.io/cohalu/reference/colocalization_submodules.md)
+  (background: all genes of the O/E matrix) and no longer mislabels
+  modules whose names contain a dot.
+
+### Residual RFLVM: second round (reach, other data types, joint test, VI prototype)
+
+- **Length-scale compression explained.** An exp(-d / lambda) response
+  has an RBF length scale of about 1.72 lambda: new
+  [`rff_reach()`](https://juninamo.github.io/cohalu/reference/rff_reach.md)
+  converts, and
+  [`rff_lengthscale_profile()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.md)
+  reports `reach`, its interval and an `identifiable` flag (length scale
+  \>= 2 bins, \<= 1/5 of the window, not at the grid edge). Responses
+  are carried by single cells, so at 8-um bins the dominant correlation
+  is the cell and profiles returned 25-50 um for any reach. Spike-ins
+  (lambda 10-320 um, 2 seeds): with 32-um bins in a 3.2-mm window the
+  reach was within 1.5x for lambda = 40-160 (6/6; Spearman 0.98 for
+  lambda \>= 40), half of it at 320 (window limit), unresolved at \<=
+  20; with 16-um bins in 1.6 mm the estimates ranked lambda = 10-320
+  (Spearman 0.95) and ordered co-localised programs with 4x different
+  reach in 6/6 runs. Profile at two or three bin sizes.
+- **Control-calibrated tests on other data types.** Negative-control
+  tiles (leave-one-out, 24 each): Xenium coculture far from EC cells
+  1/24 called (old test 24/24), EC-dense tiles 7/8, planted programs 67
+  / 96%; Visium HD synovium tiles without lining 0/24 (old 10/24),
+  lining tiles 3/8, planted 21 / 42%; organoid 150-um tiles 1/24 (old
+  23/24) but no power at that tile size. With fewer than 19 controls the
+  empirical control p-value cannot fall below 0.05;
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md)
+  now warns and uses a Gaussian approximation.
+- `rff_program_test_joint(crossfit = TRUE, control = )`: cross-fitted,
+  control-calibrated group test (median window z along each pooled
+  direction, null from pseudo-target groups of controls; the control
+  reference now stores cross-fitting matrices). Null groups 1/12 (real),
+  0/6 (simulation); shared programs 4/6 simulated groups, 2/4 coculture,
+  0/4 Visium HD, 0/4 organoid planted groups - calibrated, but not more
+  powerful than per-window tests yet.
+- The held-out statistic of
+  [`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md)
+  rejected 6/6 targets with the program and 0/6 without (19
+  permutations); it is slower than, and not better than, the default
+  score statistic.
+- **Experimental prototypes.**
+  [`rff_lengthscale_vi()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_vi.md):
+  length scale by the variational evidence (Gaussian variational field
+  posterior, Poisson likelihood, nugget; CG, Lanczos and Hutchinson with
+  FFT products);
+  [`rff_lengthscale_mcmc()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_mcmc.md):
+  reference sampler (elliptical slice sampling, Metropolis on length
+  scale and amplitude); `fit_spatial_rff(family = "multinomial")`:
+  counts given each bin’s total. On synthetic fields VI, profile and
+  MCMC agreed (GP length scales 5-80 within 1.5x); on real spike-ins VI
+  was no better than the profile and 5-15x slower; the multinomial
+  likelihood did not lower false calls (calibrated 1 vs 1 of 24 tiles,
+  old test 11 vs 12). The held-out profile stays the default.
+
+### Residual RFLVM: method fixes after the September 2026 evaluations
+
+- **Length scales are now estimated by profiling.**
+  [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
+  never estimated length scales: learned length scales were held near
+  their initial values by a log-normal prior centred there, and the MAP
+  objective (which does not integrate over the field weights) always
+  favoured the smallest length scale. New
+  [`rff_lengthscale_profile()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.md)
+  profiles each program over a grid of fixed length scales (default
+  5-320): everything else in the fit is held fixed, the program’s
+  loadings are fixed, its field is refitted with a quarter of the bins
+  left out, and the held-out log-likelihood gain over the model without
+  the program is the profile; the maximum (parabola in log length scale)
+  is the estimate, with a spatial block-bootstrap interval and
+  per-length-scale curves.
+  `fit_spatial_rff(lengthscales = "profile", ls_grid = , profile = )`
+  fits, profiles and refits (new argument `start` keeps the factors); in
+  `rff_programs(lengthscale = "profile")` the programs table reports the
+  profiled length scale with its interval. Validation (6-gene response
+  programs spiked into a real 0.8 x 0.8 mm RA Xenium region around
+  hidden producer cells, decaying as exp(-d / lambda), lambda = 10-320
+  um, 2 seeds): Spearman(estimate, lambda) = 0.89 with the default
+  held-out units of 3 x 3 bins (0.78 with single bins), but the
+  estimates are compressed (about 25 um at lambda = 10, 40-70 um at
+  lambda = 320) - they rank reaches, they do not measure them. A
+  co-localised decoy program with a 4x different reach was always
+  recovered as a separate program, but its length scale was ordered
+  correctly in only 4/6 runs. The old learned length scales stayed at
+  their initial values (10 -\> 10.2, 30 -\> 33, 90 -\> 83) and the MAP
+  objective was minimal at 5-10 um in 21/21 runs.
+- **Calibrated program test for real tissue.** On real tissue the
+  gene-shift null of
+  [`rff_program_test()`](https://juninamo.github.io/cohalu/reference/rff_program_test.md)
+  is rejected by almost any shared residual structure (spill-over,
+  mixing, cellularity, cell-state heterogeneity): on a real RA Xenium
+  section it called the first component in 42% of 24 non-TLS tiles and
+  95% of 22 TLS windows, whereas gene-shifted data were called in 0/46 -
+  the null is calibrated, but it is not the question. New options of
+  `rff_program_test(null = "shift")`: `crossfit = TRUE` (components
+  found on one half of the bins, their variance share measured on the
+  other half; `excess` = held-out share / surrogate mean - 1 with a
+  block-bootstrap interval), `control =` a negative-control reference
+  from
+  [`rff_control_reference()`](https://juninamo.github.io/cohalu/reference/rff_control_reference.md)
+  (windows where no program of interest is expected;
+  `control_stat = "direction"`: is the component direction more active
+  here than in the controls, calibrated by treating each control window
+  the same way) and `min_effect` (effect-size threshold on the lower
+  interval bound); the decision is the new `call` column, used by
+  [`rff_programs()`](https://juninamo.github.io/cohalu/reference/rff_programs.md)
+  and shown in
+  [`rff_report()`](https://juninamo.github.io/cohalu/reference/rff_report.md).
+  Real RA section (leave-one-out over 24 non-TLS tiles): first component
+  called in 15/24 tiles by the cross-fitted test alone, 0/24 with the
+  direction-wise control comparison (1/24 rank-wise); 6-gene programs
+  planted into the tiles were found in 0% / 33% / 58% of tiles at
+  log-amplitude 0.5 / 0.75 /
+  1.  The 22 TLS windows were not called against the non-TLS tiles:
+      their leading residual structure is not stronger than elsewhere in
+      the tissue. Simulated tissues with spill-over, cellularity,
+      capture and gene-own fields: the old test called 55% of tissues
+      without a program, the cross-fitted test 30%, with 20 control
+      tissues 0%; power 40% / 95% / 100% at program amplitude 0.3 / 0.5
+      / 0.8. The old behaviour is the default (`crossfit = FALSE`).
+- `rff_program_test(robust = TRUE)` (always used by the cross-fitted
+  test): variance floor for Pearson residuals (owner-type offsets give
+  near-zero means for genes of absent cell types, so single spill-over
+  transcripts dominated) and surrogate sources outside the tissue are
+  refilled by further random transformations instead of zeros (zeros
+  created a strong shared component in the surrogates of windows with
+  ragged tissue masks, making the test very conservative there:
+  surrogate first-component share up to 5x the observed one).
+- **Transfer test for fixed loadings.** New
+  [`rff_transfer_test()`](https://juninamo.github.io/cohalu/reference/rff_transfer_test.md):
+  is a program learned elsewhere active in new tissue? Score statistic
+  (share of the target’s processed residual variance along the program
+  direction) or held-out likelihood gain, against a permuted-loading
+  null (loadings permuted among genes within abundance strata; the
+  target data and every gene’s own spatial structure are untouched).
+  Simulation with realistic nuisance (20 targets each): a learned
+  program was detected in 20/20 targets that carry it, 0/20 without it,
+  0/20 with a different program; permuted loadings 2/60. The
+  fixed-loading field amplitude used before called 3/20 targets without
+  the program. Real data: TLS programs learned in one patient fold
+  transferred to 86% of window-program pairs in 22 TLS windows of a
+  held-out patient (60% in non-TLS tiles, mostly cell-type programs);
+  permuted and random loadings 1.5-8%. Micromass programs transferred to
+  an organoid (EC program p = 0.001, myofibroblast p = 0.03) but not to
+  in vivo AMP synovium. The held-out statistic was run on only 6 targets
+  and rejected 2/2 targets without the program - not validated; use the
+  default `"score"`.
+- **Fractions (e.g. nuclear transcripts per gene and bin):
+  `family = "binomial"`** in
+  [`fit_spatial_rff()`](https://juninamo.github.io/cohalu/reference/fit_spatial_rff.md)
+  (new argument `trials`; logit link, no bin area), supported by
+  `rff_program_test(null = "shift")`,
+  [`rff_factor_test()`](https://juninamo.github.io/cohalu/reference/rff_factor_test.md),
+  [`rff_lengthscale_profile()`](https://juninamo.github.io/cohalu/reference/rff_lengthscale_profile.md)
+  and the transfer test. With a log link and `log(trials x fraction)` as
+  offset, a field shared by all genes cannot raise genes whose fraction
+  is near 1, so a spurious program with loadings that decrease with each
+  gene’s overall fraction appears (log-link saturation). Simulation
+  (shared nuclear-area field, no program): log link called a component
+  in 10/10 tissues with loading correlation -0.82 with the genes’
+  nuclear fraction; binomial 1/10, r = -0.01; a planted program was
+  found by both (10/10). On real RA windows the correlation of the
+  leading component with nuclear fraction fell only partly (max \|r\|
+  0.21-0.58 -\> 0.13-0.46), so nuclear-retention programs on real data
+  remain confounded with other gene properties.
+
 ### Package renamed
 
 - The package is renamed from `spatialCooccur` to `cohalu` (COHALU:

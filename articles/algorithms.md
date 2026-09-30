@@ -512,6 +512,12 @@ simulates counts from the fitted model without factors, refits, and
 compares each factor’s strength $`\lVert L_{\cdot k} \rVert_2`$ with the
 largest null factor (parametric bootstrap, family-wise over factors).
 
+When to use the residual model, how to calibrate it against
+negative-control regions and validate programs by transfer, and what it
+did and did not show on real tissue are summarised in the article [When
+to use the residual RFLVM (and when
+not)](https://juninamo.github.io/cohalu/articles/rflvm_when_to_use.md).
+
 #### Gene-level modules — `colocalization_gene_matrix()`, `colocalization_modules()`, `module_enrichment()`
 
 With a disc kernel $`K_r`$ (one FFT convolution per gene),
@@ -524,7 +530,12 @@ E_{ab} = \frac{n_a n_b}{N (N - 1)}\, P_{\mathrm{all}},
 
 and $`\log_2((P_{ab} + c) / (E_{ab} + c))`$ is 0 without
 co-localization. Genes are clustered (average linkage, distance
-$`\max M - M`$) into modules;
+$`\max M - M`$) into modules. Large modules can chain (populations that
+share a niche); with `method = "profile"`, or per module with
+[`colocalization_submodules()`](https://juninamo.github.io/cohalu/reference/colocalization_submodules.md),
+genes are instead grouped by their co-localization profiles (rows of
+$`M`$; distance $`1 - \mathrm{cor}`$, Ward linkage), with the number of
+groups chosen by the mean silhouette width.
 [`module_enrichment()`](https://juninamo.github.io/cohalu/reference/module_enrichment.md)
 tests any gene sets per module with the hypergeometric test and BH.
 

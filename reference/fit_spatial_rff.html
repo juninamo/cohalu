@@ -57,6 +57,7 @@ closed-form gradients (L-BFGS-B)."><meta property="og:image" content="https://ju
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-methods" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Methods</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-methods"><li><a class="dropdown-item" href="../articles/algorithms.html">Algorithm reference</a></li>
+    <li><a class="dropdown-item" href="../articles/rflvm_when_to_use.html">When to use the residual RFLVM</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -103,7 +104,7 @@ closed-form gradients (L-BFGS-B).</p>
 <span>  offset_genes <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  ard <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>  n_features <span class="op">=</span> <span class="fl">64</span>,</span>
-<span>  family <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"nb"</span>, <span class="st">"poisson"</span><span class="op">)</span>,</span>
+<span>  family <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"nb"</span>, <span class="st">"poisson"</span>, <span class="st">"binomial"</span>, <span class="st">"multinomial"</span><span class="op">)</span>,</span>
 <span>  max_iter <span class="op">=</span> <span class="fl">500</span>,</span>
 <span>  seed <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -113,7 +114,11 @@ closed-form gradients (L-BFGS-B).</p>
 <span>  basis <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"random"</span>, <span class="st">"grid"</span><span class="op">)</span>,</span>
 <span>  learn_lengthscales <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  l1 <span class="op">=</span> <span class="fl">0</span>,</span>
-<span>  loadings <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  loadings <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  trials <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  start <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ls_grid <span class="op">=</span> <span class="fl">5</span> <span class="op">*</span> <span class="fl">2</span><span class="op">^</span><span class="op">(</span><span class="fl">0</span><span class="op">:</span><span class="fl">6</span><span class="op">)</span>,</span>
+<span>  profile <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -131,7 +136,19 @@ closed-form gradients (L-BFGS-B).</p>
 
 <dt id="arg-lengthscales">lengthscales<a class="anchor" aria-label="anchor" href="#arg-lengthscales"></a></dt>
 <dd><p>Initial length scales (recycled to `K`); spreading
-them over scales breaks the symmetry between factors.</p></dd>
+them over scales breaks the symmetry between factors. With
+`learn_lengthscales = FALSE` (recommended) they are the fixed length
+scales. `"profile"` estimates one length scale per factor by held-out
+likelihood: a first fit with fixed length scale `profile$init`
+(default 20) finds the programs, [rff_lengthscale_profile()] profiles
+each program over `ls_grid`, and the model is refitted with the
+profiled length scales (starting from the first fit); the profile is
+returned as `lengthscale_profile`. Learned length scales
+(`learn_lengthscales = TRUE`) are **not** estimates: they are held near
+their initial values by a log-normal prior centred there, and the MAP
+objective (which does not integrate over the field weights) favours the
+smallest length scale; in spike-in tests they stayed at their initial
+values.</p></dd>
 
 
 <dt id="arg-density-lengthscale">density_lengthscale<a class="anchor" aria-label="anchor" href="#arg-density-lengthscale"></a></dt>
@@ -186,8 +203,22 @@ generously. `0` (default) keeps the Gaussian prior only. After the fit,
 
 
 <dt id="arg-family">family<a class="anchor" aria-label="anchor" href="#arg-family"></a></dt>
-<dd><p>`"nb"` (negative binomial, gene-specific dispersion) or
-`"poisson"`.</p></dd>
+<dd><p>`"nb"` (negative binomial, gene-specific dispersion),
+`"poisson"` or `"binomial"`. `"binomial"` models `y` as successes out
+of `trials` with a logit link,
+\(\mathrm{logit}\,p_{bj} = o_{bj} + \alpha_j + \sigma_0 f_0(u_b) +
+\sum_k L_{jk} f_k(u_b)\) (no bin area), e.g. the nuclear transcripts of
+each gene and bin out of all its transcripts there. Use it for
+fractions: with a log link and `log(trials)` as offset, a field shared
+by all genes cannot raise genes whose fraction is already near 1, so a
+spurious program with loadings that decrease with each gene's overall
+fraction appears (log-link saturation).
+`"multinomial"` models each bin's counts over the modelled genes
+given the bin's total (a free effect per bin, profiled out: Poisson
+with a bin intercept), so everything that scales all genes of a bin
+together - cellularity, transcriptome size, capture - drops out and no
+cellularity field is fitted. Supported by the gene-shift and
+cross-fitted program tests and the length-scale profiles.</p></dd>
 
 
 <dt id="arg-max-iter">max_iter<a class="anchor" aria-label="anchor" href="#arg-max-iter"></a></dt>
@@ -270,6 +301,30 @@ usual, so `fit$L` is `loadings` times the program's `amplitude` in this
 tissue (the standard deviation of the fitted field, returned as
 `amplitude`).</p></dd>
 
+
+<dt id="arg-trials">trials<a class="anchor" aria-label="anchor" href="#arg-trials"></a></dt>
+<dd><p>With `family = "binomial"`: numeric matrix of trials (bins
+or in-tissue bins x genes, columns matched by name when named),
+`&gt;= binned$counts`.</p></dd>
+
+
+<dt id="arg-start">start<a class="anchor" aria-label="anchor" href="#arg-start"></a></dt>
+<dd><p>Optional earlier fit to the same bins and genes with the
+same number of factors: its loadings and (projected) factor fields are
+the starting values of the factors (used by `lengthscales = "profile"`
+to refit with new length scales without relabelling the factors).</p></dd>
+
+
+<dt id="arg-ls-grid">ls_grid<a class="anchor" aria-label="anchor" href="#arg-ls-grid"></a></dt>
+<dd><p>Length scales (coordinate units) profiled with
+`lengthscales = "profile"`.</p></dd>
+
+
+<dt id="arg-profile">profile<a class="anchor" aria-label="anchor" href="#arg-profile"></a></dt>
+<dd><p>List of settings for `lengthscales = "profile"`: `init`
+(length scale of the first fit) and further arguments of
+[rff_lengthscale_profile()] (e.g. `folds`, `n_cores`, `factors`).</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -281,7 +336,8 @@ tissue (the standard deviation of the fitted field, returned as
   random frequencies, the genes, the settings (`settings`, used by
   [rff_factor_test()]) and convergence information; with fixed
   `loadings`, also `amplitude` (standard deviation of each program's
-  fitted field; `NULL` otherwise).</p>
+  fitted field; `NULL` otherwise). With `lengthscales = "profile"`, also
+  `lengthscale_profile` (see [rff_lengthscale_profile()]).</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -294,6 +350,22 @@ tissue (the standard deviation of the fitted field, returned as
   rather than at convergence, so the loadings - and hence
   `factor_strength` - depend on `max_iter`; compare fits (and bootstrap
   refits) only at the same `max_iter`.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="when-to-use-limitations">When to use / limitations<a class="anchor" aria-label="anchor" href="#when-to-use-limitations"></a></h2>
+    <p>With an `offset` of known structure
+  this is the residual RFLVM, a tool for discovering spatial gene
+  programs without pre-specified genes and for mapping programs with fixed
+  `loadings` in new tissue (test the transfer with [rff_transfer_test()]).
+  Most users should start from [rff_programs()]. Learned length scales
+  (`learn_lengthscales = TRUE`) stay near their initial values and are not
+  estimates; `lengthscales = "profile"` ranks reaches when bins average
+  several cells (16-32 um), but does not measure reach at 8-um bins. The
+  fitted factors are not a test: calibrate with [rff_program_test()] and
+  negative-control regions. For a known gradient or gene set, supervised
+  models (per-gene GLM on distance, C-SIDE) or [pcf_cross()] are simpler
+  and were at least as powerful. `family = "multinomial"` gave no gain
+  over the negative binomial model on real tissue.</p>
     </div>
     <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>

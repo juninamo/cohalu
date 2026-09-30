@@ -21,3 +21,5 @@ Mathematical description of every core function.
 
 - [Algorithm reference: core COHALU
   functions](https://juninamo.github.io/cohalu/articles/algorithms.md):
+- [When to use the residual RFLVM (and when
+  not)](https://juninamo.github.io/cohalu/articles/rflvm_when_to_use.md):

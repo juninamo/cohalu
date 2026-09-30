@@ -16,8 +16,8 @@ module_enrichment(modules, gene_sets, universe = NULL, min_overlap = 1)
 
 - modules:
 
-  Output of \[colocalization_modules()\] (or its \`modules\`
-  data.frame).
+  Output of \[colocalization_modules()\] or
+  \[colocalization_submodules()\] (or its \`modules\` data.frame).
 
 - gene_sets:
 
@@ -25,7 +25,9 @@ module_enrichment(modules, gene_sets, universe = NULL, min_overlap = 1)
 
 - universe:
 
-  Background genes (default: all clustered genes).
+  Background genes (default: the \`universe\` element of \`modules\`,
+  i.e. all genes of the O/E matrix, or else all genes in the \`modules\`
+  data.frame).
 
 - min_overlap:
 

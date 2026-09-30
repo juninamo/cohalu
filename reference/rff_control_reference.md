@@ -1,0 +1,84 @@
+# Negative-control reference for calibrated program tests
+
+\*\*Experimental.\*\* On real tissue, the gene-shift null of
+\[rff_program_test()\] is rejected by almost any shared residual
+structure (segmentation spill-over, mixed bins, cellularity, cell-state
+heterogeneity), so "significant" does not separate a program of interest
+from the structure that every region of the tissue has. A within-data
+null makes the question relative: is the target's shared residual
+structure stronger (rank-wise), or is a given program direction more
+active, than in regions where no program of interest is expected
+(negative controls - e.g. regions without TLS, a homogeneous monolayer
+far from the inducing cells, untreated wells)?
+
+## Usage
+
+``` r
+rff_control_reference(
+  fits,
+  binned,
+  bandwidth = NULL,
+  highpass = NULL,
+  n_components = 6,
+  n_boot = 49,
+  crossfit_block = NULL,
+  seed = 1,
+  n_cores = 1,
+  keep_matrices = TRUE
+)
+```
+
+## Arguments
+
+- fits:
+
+  List of \[fit_spatial_rff()\] fits of the control windows (same genes
+  as the target fits).
+
+- binned:
+
+  List of the matching \`binned_transcripts\` objects.
+
+- bandwidth, highpass, n_components, n_boot, crossfit_block:
+
+  As in \[rff_program_test()\]; use the same values for the target test.
+
+- seed:
+
+  Random seed.
+
+- n_cores:
+
+  Cores (windows are processed in parallel; forked).
+
+- keep_matrices:
+
+  Also store each control window's cross-fitting matrices (a second pass
+  of surrogates), needed by \`rff_program_test_joint(control = )\`.
+
+## Value
+
+An object of class \`rff_control\`: \`excess\` (controls x components),
+\`share\`, \`null_mean\`, per-window covariances \`C\` and \`Cbar\` and
+component directions \`V\`, \`loo\` (leave-one-out calibration: every
+control window tested against the others - held-out p-value, rank-wise
+\`p_control\`, direction-wise \`z_dir\` / \`p_dir\`; \`called\` /
+\`called_dir\` = held-out p and the control p \<= 0.05, i.e. the
+false-positive rate of the procedure among negative controls), \`genes\`
+and \`settings\`.
+
+## Details
+
+\`rff_control_reference()\` runs the cross-fitted statistic of
+\`rff_program_test(crossfit = TRUE)\` in every control window:
+components are found on one half of the bins (checkerboard of spatial
+blocks) and their share of the residual variance is measured on the
+other half, for the data and for gene-shift surrogates; the relative
+excess (held-out share / surrogate mean - 1) of every component rank is
+stored, together with each window's residual covariance and mean
+surrogate covariance (for direction-specific comparisons). Pass the
+result as \`control\` to \[rff_program_test()\].
+
+## See also
+
+\[rff_program_test()\]
