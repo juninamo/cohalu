@@ -20,6 +20,21 @@
 #'   [rff_program_test()], [rff_factor_test()] and [rff_offset()] are the
 #'   building blocks, for custom pipelines.
 #'
+#' @section When to use / limitations: Use it to **discover** multi-gene
+#'   spatial programs beyond known structure without naming genes or
+#'   structures in advance, then validate them by [rff_transfer_test()] on
+#'   held-out patients or cohorts. On real tissue, always pass `control`
+#'   (negative-control regions, [rff_control_reference()]) with `crossfit =
+#'   TRUE`: the gene-shift test alone called almost every real window. The
+#'   programs found are only as new as the offset is rich: with lineage
+#'   labels only, discovered programs were cell-type / sub-lineage residuals
+#'   or technical axes (use fine labels, `gene_covariates` for spill-over and
+#'   the nuclear share in [rff_offset()]) - inspect each with [rff_report()].
+#'   For a known question (distance to a structure, a known gene set) prefer
+#'   supervised tools (per-gene GLM on distance, C-SIDE, [pcf_cross()]).
+#'   Report length scales as ranks only (see [rff_lengthscale_profile()]).
+#'   See the article "When to use the residual RFLVM (and when not)".
+#'
 #' @section Detection axes and program maps: The program test finds
 #'   **detection axes** (principal components of smoothed residuals, `PC1`,
 #'   ...) and decides whether and how many programs exist; the fit gives

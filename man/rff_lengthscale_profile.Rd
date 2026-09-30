@@ -124,6 +124,20 @@ three bin sizes; treat a reach as measured only when it is at least
 1.5 bins and at most about a twentieth of the window at that bin size,
 and otherwise report the ranking.
 }
+\section{When to use / limitations}{
+ Use the profile to **rank** the
+  spatial scales of programs and to say which ranges are identifiable,
+  not to measure a signalling distance. Report `reach` with
+  `identifiable`, from profiles at 16-32 um bins (at 8-um bins single
+  cells dominate and the answer is 25-50 um for any reach). Reaches of 20
+  um or less are not recoverable without known producers; when producers
+  are known, a producer-conditioned regression on distance is the more
+  direct measurement. The bootstrap interval is too narrow to describe
+  the reach itself (it did not cover the spread between replicate
+  spike-ins). [rff_lengthscale_vi()] gave no better estimates on real
+  spike-ins and is slower.
+}
+
 \examples{
 \donttest{
 set.seed(1); n <- 30; res <- 5

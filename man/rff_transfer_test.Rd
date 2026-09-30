@@ -91,6 +91,22 @@ The field amplitude of a fixed-loading fit (`fit_spatial_rff(loadings =
 similar amplitudes on real tissue, because any direction picks up some
 shared residual structure.
 }
+\section{When to use / limitations}{
+ This is the validation step of the
+  residual RFLVM: discover programs in one set of patients, fix their
+  loadings, and test them in held-out patients, another cohort, panel or
+  platform. In simulation the score statistic detected 20/20 true
+  transfers and 0/20 targets without the program. It tests activity, not
+  specificity: a program with shared residual structure (e.g. a
+  cell-type residual) can transfer to every region of a data set, so also
+  test negative-control regions of the target and compare. In the
+  synovial evaluation a discovered perivascular fibroblast program
+  transferred to an independent cohort in perivascular but not control
+  windows, whereas on Visium HD all programs transferred everywhere and
+  added no support. With few target windows the p-values are limited by
+  `n_perm` and by the number of windows.
+}
+
 \seealso{
 [fit_spatial_rff()] (`loadings`), [rff_program_test_joint()]
   (confirmatory mode, gene-shift null)

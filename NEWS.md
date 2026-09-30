@@ -1,5 +1,19 @@
 # cohalu 0.99.3
 
+## Documentation
+
+* New article "When to use the residual RFLVM (and when not)"
+  (`vignettes/articles/rflvm_when_to_use.Rmd`): positions the residual
+  RFLVM as a discovery-and-transfer tool, with a decision table (supervised
+  distance GLM / C-SIDE / `pcf_cross()` for known questions), the
+  recommended workflow (`rff_programs()` with a rich offset, negative-control
+  calibration with `rff_control_reference()`, `rff_report()`,
+  `rff_transfer_test()` on held-out data), pitfalls and a summary of the
+  real-data validation. `rff_programs()`, `fit_spatial_rff()`,
+  `rff_program_test()`, `rff_transfer_test()` and
+  `rff_lengthscale_profile()` gain a "When to use / limitations" section,
+  and the README a short positioning paragraph. No code changes.
+
 ## Co-localization sub-modules
 
 * `colocalization_modules(method = "profile")` clusters genes by the

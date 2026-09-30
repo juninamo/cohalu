@@ -180,6 +180,21 @@ program amplitude 0.5, vs 12-13/20 for [rff_factor_test()]), called 1/40
 tissues whose only extra structure was cellularity shared by all genes
 (residual PCA 12/20) and 3/60 tissues without any program.
 }
+\section{When to use / limitations}{
+ The simulation calibration above does
+  not carry over to real tissue: there the gene-shift null is valid
+  (gene-shifted data were called in 0/46 windows), but real tissue always
+  carries shared residual structure, and the plain test called 95% of TLS
+  windows and 42% of negative-control tiles. On real data use `crossfit =
+  TRUE` and `control` from [rff_control_reference()], built from at least 19
+  negative-control regions of the same data type: 0-1 of 24 control tiles
+  were then called on four data types, at a power cost for weak programs
+  and small windows. A call means "more residual structure than in
+  control regions", not a new biological program: check cell-type /
+  sub-lineage residuals and technical axes with [rff_report()], and
+  confirm on held-out data with [rff_transfer_test()].
+}
+
 \examples{
 \donttest{
 tx <- simulate_transcripts(size = 100, rate = 0.02, n_genes_per_set = 3)

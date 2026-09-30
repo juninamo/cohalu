@@ -484,6 +484,11 @@ model without factors, refits, and compares each factor's strength
 $\lVert L_{\cdot k} \rVert_2$ with the largest null factor (parametric
 bootstrap, family-wise over factors).
 
+When to use the residual model, how to calibrate it against negative-control
+regions and validate programs by transfer, and what it did and did not show
+on real tissue are summarised in the article
+[When to use the residual RFLVM (and when not)](rflvm_when_to_use.html).
+
 ### Gene-level modules — `colocalization_gene_matrix()`, `colocalization_modules()`, `module_enrichment()`
 
 With a disc kernel $K_r$ (one FFT convolution per gene),

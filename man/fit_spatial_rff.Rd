@@ -224,6 +224,22 @@ The fields are evaluated on the bin grid through the
   `factor_strength` - depend on `max_iter`; compare fits (and bootstrap
   refits) only at the same `max_iter`.
 }
+\section{When to use / limitations}{
+ With an `offset` of known structure
+  this is the residual RFLVM, a tool for discovering spatial gene
+  programs without pre-specified genes and for mapping programs with fixed
+  `loadings` in new tissue (test the transfer with [rff_transfer_test()]).
+  Most users should start from [rff_programs()]. Learned length scales
+  (`learn_lengthscales = TRUE`) stay near their initial values and are not
+  estimates; `lengthscales = "profile"` ranks reaches when bins average
+  several cells (16-32 um), but does not measure reach at 8-um bins. The
+  fitted factors are not a test: calibrate with [rff_program_test()] and
+  negative-control regions. For a known gradient or gene set, supervised
+  models (per-gene GLM on distance, C-SIDE) or [pcf_cross()] are simpler
+  and were at least as powerful. `family = "multinomial"` gave no gain
+  over the negative binomial model on real tissue.
+}
+
 \examples{
 tx <- simulate_transcripts(size = 120, rate = 0.02, n_genes_per_set = 3)
 b <- bin_transcripts(tx, bin_size = 6)

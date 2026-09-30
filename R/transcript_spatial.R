@@ -583,6 +583,20 @@ pcf_matrix <- function(binned, gene_sets, r_max = 100, r_step = binned$grid$bin_
 #' weights, length scales and dispersions are estimated jointly by MAP with
 #' closed-form gradients (L-BFGS-B).
 #'
+#' @section When to use / limitations: With an `offset` of known structure
+#'   this is the residual RFLVM, a tool for discovering spatial gene
+#'   programs without pre-specified genes and for mapping programs with fixed
+#'   `loadings` in new tissue (test the transfer with [rff_transfer_test()]).
+#'   Most users should start from [rff_programs()]. Learned length scales
+#'   (`learn_lengthscales = TRUE`) stay near their initial values and are not
+#'   estimates; `lengthscales = "profile"` ranks reaches when bins average
+#'   several cells (16-32 um), but does not measure reach at 8-um bins. The
+#'   fitted factors are not a test: calibrate with [rff_program_test()] and
+#'   negative-control regions. For a known gradient or gene set, supervised
+#'   models (per-gene GLM on distance, C-SIDE) or [pcf_cross()] are simpler
+#'   and were at least as powerful. `family = "multinomial"` gave no gain
+#'   over the negative binomial model on real tissue.
+#'
 #' @param binned A `binned_transcripts` object.
 #' @param n_factors Number of spatial factors `K`.
 #' @param lengthscales Initial length scales (recycled to `K`); spreading
@@ -1685,6 +1699,19 @@ rff_factor_test <- function(fit, binned, n_boot = 19, max_iter = NULL,
 #' program amplitude 0.5, vs 12-13/20 for [rff_factor_test()]), called 1/40
 #' tissues whose only extra structure was cellularity shared by all genes
 #' (residual PCA 12/20) and 3/60 tissues without any program.
+#'
+#' @section When to use / limitations: The simulation calibration above does
+#'   not carry over to real tissue: there the gene-shift null is valid
+#'   (gene-shifted data were called in 0/46 windows), but real tissue always
+#'   carries shared residual structure, and the plain test called 95% of TLS
+#'   windows and 42% of negative-control tiles. On real data use `crossfit =
+#'   TRUE` and `control` from [rff_control_reference()], built from at least 19
+#'   negative-control regions of the same data type: 0-1 of 24 control tiles
+#'   were then called on four data types, at a power cost for weak programs
+#'   and small windows. A call means "more residual structure than in
+#'   control regions", not a new biological program: check cell-type /
+#'   sub-lineage residuals and technical axes with [rff_report()], and
+#'   confirm on held-out data with [rff_transfer_test()].
 #'
 #' @param fit Output of [fit_spatial_rff()] with a matrix or `"area"` offset.
 #' @param binned The `binned_transcripts` object used for the fit.

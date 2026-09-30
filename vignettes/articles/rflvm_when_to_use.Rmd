@@ -1,0 +1,165 @@
+---
+title: "When to use the residual RFLVM (and when not)"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+**Author:** Jun Inamo (juninamo@keio.jp)
+
+The residual random-feature latent variable model (residual RFLVM:
+`rff_programs()`, `fit_spatial_rff()` with an offset, `rff_program_test()`,
+`rff_transfer_test()`, `rff_lengthscale_profile()`) is **experimental**. This
+page says what it is good for, based on evaluations on real synovial Xenium
+5K data, in vitro Xenium data sets and Visium HD, and where simpler tools are
+better. The code chunks need real data and are not run.
+
+## In one paragraph
+
+The residual RFLVM is a **discovery-and-transfer tool**. Use it to find
+multi-gene spatial programs beyond the structure you already know (cell
+types, domains, distances), without pre-specifying genes or structures, and
+then to check that a program is real by a **calibrated transfer** to held-out
+patients or an independent cohort. It is not the best tool for a question you
+can already state (distance to a structure, a known gene set), it does not
+measure signalling reach as a distance at cellular resolution, and on its own
+it has no power for clinical prediction in small cohorts.
+
+## Decision table
+
+| Your question | Use | Why |
+|---|---|---|
+| Which genes change with distance to a known structure (vessel, lining, TLS)? | Per-gene GLM on distance (e.g. quasi-Poisson with window or patient effects), C-SIDE | Supervised methods recovered a known perivascular gradient directly and matched or beat the RFLVM in spike-ins (gene AUC 0.82-0.85 vs 0.70-0.73) |
+| Do two cell types or gene sets co-localize, at which distance, and does it differ between groups? | `nhood_enrichment()`, `cooccur_local_oe()`, `pcf_cross()`, `pcf_matrix()`, `compare_groups()` | Calibrated O/E effect sizes and patient-level tests; no model needed |
+| Is a known gene set spatially patterned? | Score the set and use `pcf_cross()`, or `rff_transfer_test()` with the set as fixed loadings | A pre-specified hypothesis needs no discovery step |
+| Are there multi-gene spatial programs beyond known structure, without naming genes or structures? | **Residual RFLVM**: `rff_programs()` with a rich offset, control calibration, `rff_report()` | Unsupervised; separates compartments that gene scans mix |
+| Does a program found in one cohort recur in held-out patients, another panel or another platform? | **`rff_transfer_test()`** with fixed loadings | Permuted-loading null keeps each gene's own spatial structure |
+| How far does a response reach? | Producer-conditioned regression when producers are known; `rff_lengthscale_profile()` + `rff_reach()` only as a **ranking** | Profiled reach ranks programs at 16-32 um bins; it is not a measured distance at 8 um bins |
+| Does a spatial program predict response or outcome? | Not the RFLVM at n < ~50 patients; project loadings onto large bulk cohorts instead | Existing features were at chance with 15 patients; AUC >= 0.86 would be needed for 80% power |
+
+## Recommended workflow
+
+### 1. Put everything you know into the offset
+
+The residual is only as interesting as the offset is rich. With lineage
+labels alone, discovered programs were mostly cell-type or sub-lineage
+residuals. Use fine labels (sub-clusters) where you have them, a
+neighbour / spill-over term, the nuclear share, and structure covariates.
+
+```{r offset}
+b  <- bin_transcripts(tx, bin_size = 8)
+E  <- rff_expected_offset(b, tx, type_col = "fine_type", neighbour_bandwidth = 10)
+off <- rff_offset(b, covariates = data.frame(inside_tls, border_dist, nuclear_share),
+                  base = E,
+                  gene_covariates = list(spill = attr(E, "neighbour") - E))
+```
+
+Leave out the covariate you want to discover (e.g. do not put vessel distance
+into the offset if the question is whether a perivascular program exists).
+
+### 2. Build a negative-control reference on the same tissue
+
+On real tissue the plain gene-shift test (`null = "shift"`) is calibrated
+against its own null but calls almost every window, because real tissue
+always carries shared residual structure. Choose regions where the program of
+interest is not expected (tissue far from the structure, a homogeneous
+monolayer far from the inducing cells, untreated wells), fit them with the
+same settings, and use at least 19 of them.
+
+```{r controls}
+ctrl_fits <- lapply(seq_along(ctrl_b), function(i)
+  rff_programs(ctrl_b[[i]], offset = ctrl_off[[i]], null = "none")$fit)
+ref <- rff_control_reference(ctrl_fits, ctrl_b, highpass = 32)
+```
+
+### 3. Discover programs with the calibrated test
+
+```{r discover}
+res <- rff_programs(b, offset = off, lengthscale = 8, highpass = 32,
+                    crossfit = TRUE, control = ref,
+                    report = "programs.html")
+res
+```
+
+For several windows or patients, `fit_spatial_rff_joint()` and
+`rff_program_test_joint(crossfit = TRUE, control = ref)` give shared
+loadings. Split patients into discovery and validation sets **before** this
+step.
+
+### 4. Inspect every program before interpreting it
+
+`rff_report()` (or `report =` above) shows the top genes, maps, which cell
+labels own the excess transcripts, and the correlation with known programs
+(`known_programs =`). Ask for each program:
+
+* Is it a cell-type or sub-lineage residual (top genes are markers of one
+  lineage; excess transcripts sit in neighbouring lineages)?
+* Is it technical (loadings track the genes' nuclear fraction, total counts,
+  or spill-over from a neighbouring compartment)?
+* Is it a known program (does it vanish when the known gene set is added to
+  the offset)?
+
+### 5. Validate by transfer to held-out data
+
+```{r transfer}
+L <- res$fit$L[, c("factor2", "factor4")]          # programs of interest
+tt_target  <- rff_transfer_test(L, val_fits,  val_b,  n_perm = 999)
+tt_control <- rff_transfer_test(L, ctrl_val_fits, ctrl_val_b, n_perm = 999)
+```
+
+A program is supported when it transfers to held-out patients or another
+cohort **and** is more active in target than in control regions. Transfer to
+every region of a platform is not evidence of specificity.
+
+### 6. Reach: ranks and identifiable ranges only
+
+```{r reach}
+b16 <- bin_transcripts(tx, bin_size = 16)
+fit16 <- fit_spatial_rff(b16, n_factors = 6, offset = off16, basis = "grid",
+                         lengthscales = "profile", ls_grid = 5 * 2^(1:7),
+                         profile = list(init = 32))
+fit16$lengthscale_profile$summary[, c("factor", "reach", "reach_lower",
+                                      "reach_upper", "identifiable")]
+```
+
+Profile at two or three bin sizes (16-32 um), report the order of reaches,
+and treat a value as a distance only when `identifiable` is `TRUE`.
+
+## Pitfalls
+
+* **Uncalibrated tests.** Without `control =`, "significant" means "some
+  shared residual structure exists", which is true almost everywhere.
+* **Significance is not novelty.** Recurrent programs that replicate across
+  folds, cohorts and offsets can still be cell-type residuals.
+* **Reach at fine bins.** At 8 um bins the profile returns 25-50 um for any
+  true reach, because single cells dominate the correlation.
+* **Amplitude is not level.** A program's amplitude measures patterning
+  within a window; a simple per-cell readout of its genes can be the better
+  group statistic.
+* **Batch and panel.** Program amplitudes move with panel and batch; compare
+  cohorts only with a design that separates them.
+* **Small cohorts.** Per-window effects with many windows per patient are not
+  per-patient effects; test at the patient level.
+
+## Validation evidence (summary)
+
+All numbers from real-data evaluations in 2026 (RA and JIA synovium, Xenium
+5K; in vitro Xenium; Visium HD); no individual-level data are shown.
+
+| Question | Result |
+|---|---|
+| Plain gene-shift test on real tissue | Gene-shifted data called in 0/46 windows (null is valid), but real TLS windows were called in 95% and negative-control tiles in 42% |
+| Control-calibrated, cross-fitted test | Negative-control tiles called 0/24 (Xenium 5K), 1/24 (coculture), 0/24 (Visium HD), 1/24 (organoid); planted 6-gene programs found in 33 / 58% (log-amplitude 0.75 / 1) on real tiles; power depends on window size |
+| Transfer test (score statistic) | Simulation: 20/20 true transfers, 0/20 without the program, 0/20 with another program |
+| Length scales | Learned length scales stay at their initial values; profiled reach ranks spike-ins at 16 um bins (Spearman 0.95, co-localised programs ordered 6/6) but is compressed (25-95 um); within 1.5x of the truth only for 40-160 um at 32 um bins in 3.2 mm windows; unresolved at <= 20 um |
+| Perivascular program (known gradient) | A per-gene distance GLM recovered the published Notch / TGF-beta gradient directly; in a spike-in benchmark no method detected the weak spike, and supervised methods matched or beat the RFLVM on gene AUC |
+| Perivascular program (discovery + transfer) | Without specifying genes or vessels, the RFLVM found a fibroblast-owned NOTCH3 / HEY1 / NOTCH4 program 0-30 um from arterioles, distinct from the vessel wall and a distal matrix program that a gene scan mixed (gene-scan ranking rho 0.72 with the vessel-wall program, 0.10 with the fibroblast program); it was perivascular-specific in held-out patients (AUC 0.64 vs control windows) and transferred with fixed loadings to an independent cohort on a 50-gene panel in perivascular (z 4.7, p = 0.001) but not control windows (p = 0.10) |
+| TLS programs | Eight programs replicated across patient folds, diseases, TLS definitions and offsets, but all were cell-type / sub-lineage residuals, a technical nuclear-RNA axis, or the known IFN-gamma program; adding spill-over and nuclear-share terms did not remove them, and they tracked known sub-lineage states (e.g. tissue-resident macrophages, plasma-cell maturity) |
+| Genetic heritability | No TLS program carried RA or JIA heritability beyond cell identity (S-LDSC, smallest q 0.83); cell-type annotations did |
+| Clinical prediction | 15 patients: existing features at chance (leave-pair-out AUC 0.20-0.61); AUC >= 0.86 needed for 80% power |
+| Multinomial likelihood | No reduction of false calls compared with the negative binomial model |
+
+See the [algorithm reference](algorithms.html) for the model, and
+`?rff_programs`, `?rff_program_test`, `?rff_transfer_test` and
+`?rff_lengthscale_profile` for details.

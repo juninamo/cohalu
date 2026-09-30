@@ -43,6 +43,8 @@ navbar:
       menu:
       - text: "Algorithm reference"
         href: articles/algorithms.html
+      - text: "When to use the residual RFLVM"
+        href: articles/rflvm_when_to_use.html
 
 articles:
 - title: Tutorials
@@ -59,6 +61,7 @@ articles:
     Mathematical description of every core function.
   contents:
   - algorithms
+  - articles/rflvm_when_to_use
 
 reference:
 - title: Simulation
@@ -117,6 +120,12 @@ reference:
   - rff_program_test
   - fit_spatial_rff_joint
   - rff_program_test_joint
+  - rff_control_reference
+  - rff_transfer_test
+  - rff_lengthscale_profile
+  - rff_reach
+  - rff_lengthscale_vi
+  - rff_lengthscale_mcmc
   - rff_expected_offset
   - rff_report
   - rff_pair_correlation
