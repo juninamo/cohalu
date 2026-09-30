@@ -14,7 +14,8 @@ rff_lengthscale_vi(
   n_probe = 8,
   seed = 1,
   n_cores = 1,
-  reach_kernel = "exponential"
+  reach_kernel = "exponential",
+  nugget = TRUE
 )
 }
 \arguments{
@@ -44,6 +45,13 @@ times the loading norm) searched at each length scale.}
 
 \item{reach_kernel}{Decay kernel for the implied reach ([rff_reach()]):
 `"exponential"` (default), `"gaussian"`, or `NULL` (no reach).}
+
+\item{nugget}{If `TRUE` (default), the program field is a smooth RBF
+part plus an independent bin-level part (relative variance estimated
+with the amplitude by maximising the ELBO). Without it, on real tissue
+the ELBO chose the smallest length scale: responses are carried by
+single cells, so the dominant correlation scale of a response map is
+the cell, not the reach.}
 }
 \value{
 An object of class `rff_ls_profile` (as

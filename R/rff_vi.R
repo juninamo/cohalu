@@ -8,7 +8,7 @@
 
 # covariance operator of the unit-variance RBF field (length scale ell, prior
 # variance s2) restricted to the in-tissue bins
-.vi_kernel <- function(grid, keep, ell, s2 = 1) {
+.vi_kernel <- function(grid, keep, ell, s2 = 1, nugget = 0) {
   nx <- grid$nx; ny <- grid$ny; bs <- grid$bin_size
   padn <- function(n) stats::nextn(n + min(n, ceiling(2 * ell / bs) + 2))
   px <- padn(nx); py <- padn(ny); P <- px * py
@@ -17,7 +17,7 @@
   idx <- (which(keep) - 1L) %% nx + 1L + ((which(keep) - 1L) %/% nx) * px
   mv <- function(V) {                                  # K %*% V for a matrix of columns
     V <- as.matrix(V)
-    apply(V, 2, function(v) { Z <- matrix(0, px, py); Z[idx] <- v; Re(stats::fft(stats::fft(Z) * ev, inverse = TRUE))[idx] / P })
+    apply(V, 2, function(v) { Z <- matrix(0, px, py); Z[idx] <- v; Re(stats::fft(stats::fft(Z) * ev, inverse = TRUE))[idx] / P + nugget * v })
   }
   list(mv = mv, N = length(idx))
 }
@@ -105,6 +105,12 @@
 #' @param amp_range Range of the field amplitude (prior standard deviation
 #'   times the loading norm) searched at each length scale.
 #' @param n_probe Hutchinson / Lanczos probe vectors.
+#' @param nugget If `TRUE` (default), the program field is a smooth RBF
+#'   part plus an independent bin-level part (relative variance estimated
+#'   with the amplitude by maximising the ELBO). Without it, on real tissue
+#'   the ELBO chose the smallest length scale: responses are carried by
+#'   single cells, so the dominant correlation scale of a response map is
+#'   the cell, not the reach.
 #' @return An object of class `rff_ls_profile` (as
 #'   [rff_lengthscale_profile()], `criterion = "elbo"`): `summary` with
 #'   `lengthscale` (maximum of the ELBO, parabola in log length scale),
@@ -114,7 +120,8 @@
 #' @seealso [rff_lengthscale_profile()]
 #' @export
 rff_lengthscale_vi <- function(fit, binned, factors = NULL, ls_grid = 5 * 2^(0:6), gene_share = 0.95,
-                               amp_range = c(0.05, 5), n_probe = 8, seed = 1, n_cores = 1, reach_kernel = "exponential") {
+                               amp_range = c(0.05, 5), n_probe = 8, seed = 1, n_cores = 1, reach_kernel = "exponential",
+                               nugget = TRUE) {
   if (!inherits(fit, "spatial_rff_fit")) stop("`fit` must come from fit_spatial_rff().")
   if (!(fit$family %in% c("nb", "poisson", "multinomial"))) stop("rff_lengthscale_vi() supports count families (nb / poisson / multinomial).")
   ls_grid <- sort(unique(as.numeric(ls_grid)))
@@ -132,23 +139,32 @@ rff_lengthscale_vi <- function(fit, binned, factors = NULL, ls_grid = 5 * 2^(0:6
     Y <- Yall[, gk, drop = FALSE]; u <- L[gk, k] / sqrt(sum(L[gk, k]^2)); lfy <- sum(lgamma(Y + 1))
     base <- sum(Y * eta0) - sum(exp(eta0)) - lfy                          # no program (ELBO = log-likelihood)
     one <- function(ell) {
-      Kop <- .vi_kernel(g, keep, ell, 1)
-      f <- function(la) { e <- tryCatch(.vi_field(Y, eta0, exp(la) * u, Kop, n_probe = n_probe, seed = seed, lfy = lfy)$elbo, error = function(err) NA_real_)
+      if (!nugget) {
+        Kop <- .vi_kernel(g, keep, ell, 1)
+        f <- function(la) { e <- tryCatch(.vi_field(Y, eta0, exp(la) * u, Kop, n_probe = n_probe, seed = seed, lfy = lfy)$elbo, error = function(err) NA_real_)
+          if (!is.finite(e)) 1e15 else -e }
+        op <- stats::optimize(f, log(amp_range), tol = 0.05)
+        return(c(elbo = -op$objective, amp = exp(op$minimum), nugget = 0))
+      }
+      # field = smooth RBF part + independent bin-level part (nugget, relative variance exp(lt)); the program
+      # direction and amplitude are shared, so bin-scale granularity (single cells) does not drive the length scale
+      f2 <- function(par) { Kop <- .vi_kernel(g, keep, ell, 1, nugget = exp(par[2]))
+        e <- tryCatch(.vi_field(Y, eta0, exp(par[1]) * u, Kop, n_probe = n_probe, seed = seed, lfy = lfy)$elbo, error = function(err) NA_real_)
         if (!is.finite(e)) 1e15 else -e }
-      op <- stats::optimize(f, log(amp_range), tol = 0.05)
-      c(elbo = -op$objective, amp = exp(op$minimum))
+      op <- stats::optim(c(log(0.5), log(0.5)), f2, method = "Nelder-Mead", control = list(maxit = 40, reltol = 1e-6))
+      c(elbo = -op$value, amp = exp(op$par[1]), nugget = exp(op$par[2]))
     }
     res <- .rff_mclapply(as.list(ls_grid), one, n_cores)
-    E <- vapply(res, `[[`, 0, "elbo"); A <- vapply(res, `[[`, 0, "amp")
+    E <- vapply(res, `[[`, 0, "elbo"); A <- vapply(res, `[[`, 0, "amp"); Nu <- vapply(res, `[[`, 0, "nugget")
     ib <- which.max(E); est <- exp(.rff_parabola_max(log(ls_grid), E, ib))
-    curves[[k]] <- data.frame(factor = k, lengthscale = ls_grid, gain = E - base, amplitude = A, row.names = NULL)
+    curves[[k]] <- data.frame(factor = k, lengthscale = ls_grid, gain = E - base, amplitude = A, nugget = Nu, row.names = NULL)
     summ[[k]] <- data.frame(factor = k, lengthscale = est, lower = NA_real_, upper = NA_real_, grid_best = ls_grid[ib],
                             gain = E[ib] - base, gain_se = NA_real_, heldout_dev_explained = NA_real_,
                             at_boundary = ib %in% c(1, length(ls_grid)), n_genes = length(gk),
                             top_genes = paste(sprintf("%s (%+.2f)", gk[1:min(5, length(gk))], L[gk[1:min(5, length(gk))], k]), collapse = ", "),
                             reach = NA_real_, reach_lower = NA_real_, reach_upper = NA_real_,
                             identifiable = est >= 2 * g$bin_size && est <= extent / 5 && !(ib %in% c(1, length(ls_grid))),
-                            amplitude = A[ib], row.names = NULL)
+                            amplitude = A[ib], nugget = Nu[ib], row.names = NULL)
   }
   sm <- do.call(rbind, summ)
   if (!is.null(reach_kernel)) sm$reach <- rff_reach(sm$lengthscale, g$bin_size, reach_kernel)

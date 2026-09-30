@@ -102,9 +102,13 @@ test_that("cross-fitted program test, control reference and effect-size threshol
   expect_true(all(cf$excess_lower <= cf$excess_upper))
   expect_true(cf$call[1])
   expect_gt(cf$excess[1], 0.5)
-  cc <- rff_program_test(w$fit, w$b, null = "shift", n_boot = 9, n_components = 3, control = ref, n_boot_ci = 50)
+  # 4 controls are too few for empirical control p-values below alpha: Gaussian fallback with a warning
+  expect_warning(cc <- rff_program_test(w$fit, w$b, null = "shift", n_boot = 9, n_components = 3, control = ref, n_boot_ci = 50),
+                 "Gaussian approximation")
   expect_true(all(c("p_control", "control_q95", "p_control_dir") %in% names(cc)))
-  expect_equal(cc$p_control[1], 1 / 5)
+  expect_lt(cc$p_control[1], 0.05)
+  cr <- rff_program_test(w$fit, w$b, null = "shift", n_boot = 9, n_components = 3, control = ref, n_boot_ci = 50, alpha = 0.25)
+  expect_equal(cr$p_control[1], 1 / 5)
   me <- rff_program_test(w$fit, w$b, null = "shift", n_boot = 9, n_components = 3, min_effect = 100, n_boot_ci = 50)
   expect_false(any(me$call))
   expect_error(rff_program_test(w$fit, w$b, crossfit = TRUE, n_boot = 3), "shift")

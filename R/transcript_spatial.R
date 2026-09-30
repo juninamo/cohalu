@@ -820,7 +820,7 @@ fit_spatial_rff <- function(binned, n_factors = 3,
   U <- sweep(U, 2, colMeans(U))
   N <- nrow(Y); J <- ncol(Y); K <- n_factors; M <- n_features
   if (family == "multinomial") {
-    if (!(is.matrix(offset) || is.data.frame(offset)) && !identical(offset[1], "area"))
+    if (!(offset %in% c("area", "matrix")))
       stop("family = \"multinomial\" supports offset = \"area\" or a matrix offset.")
     density_lengthscale <- NULL                    # a field shared by all genes cancels in the multinomial
   }
@@ -2116,9 +2116,11 @@ rff_program_test <- function(fit, binned, bandwidth = NULL, n_components = 6, n_
 #' @param crossfit_block Side of the checkerboard blocks (default 12 bins or
 #'   that of `control`).
 #' @param control Output of [rff_control_reference()] for negative-control
-#'   windows (implies `crossfit = TRUE`): `excess_vs_control` is the mean
-#'   held-out excess of the windows along each component direction minus the
-#'   mean excess of the control windows along the same direction, and
+#'   windows (implies `crossfit = TRUE`): `excess_vs_control` is the median
+#'   over the windows of each window's held-out excess along the component
+#'   direction, standardised by the mean and standard deviation of the
+#'   control windows' excess along the same direction (robust to single
+#'   windows with idiosyncratic structure), and
 #'   `p_control` compares it with `n_group_null` pseudo-target groups of
 #'   control windows (same number of windows, tested against the remaining
 #'   controls in the same way); `call` also requires `p_control <= alpha`.

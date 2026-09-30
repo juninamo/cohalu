@@ -72,9 +72,11 @@ is the decision. Robust residual processing is used.}
 that of `control`).}
 
 \item{control}{Output of [rff_control_reference()] for negative-control
-windows (implies `crossfit = TRUE`): `excess_vs_control` is the mean
-held-out excess of the windows along each component direction minus the
-mean excess of the control windows along the same direction, and
+windows (implies `crossfit = TRUE`): `excess_vs_control` is the median
+over the windows of each window's held-out excess along the component
+direction, standardised by the mean and standard deviation of the
+control windows' excess along the same direction (robust to single
+windows with idiosyncratic structure), and
 `p_control` compares it with `n_group_null` pseudo-target groups of
 control windows (same number of windows, tested against the remaining
 controls in the same way); `call` also requires `p_control <= alpha`.}

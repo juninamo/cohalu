@@ -1,5 +1,48 @@
 # cohalu 0.99.3
 
+## Residual RFLVM: second round (reach, other data types, joint test, VI prototype)
+
+* **Length-scale compression explained.** An exp(-d / lambda) response has an
+  RBF length scale of about 1.72 lambda: new `rff_reach()` converts, and
+  `rff_lengthscale_profile()` reports `reach`, its interval and an
+  `identifiable` flag (length scale >= 2 bins, <= 1/5 of the window, not at
+  the grid edge). Responses are carried by single cells, so at 8-um bins the
+  dominant correlation is the cell and profiles returned 25-50 um for any
+  reach. Spike-ins (lambda 10-320 um, 2 seeds): with 32-um bins in a 3.2-mm
+  window the reach was within 1.5x for lambda = 40-160 (6/6; Spearman 0.98
+  for lambda >= 40), half of it at 320 (window limit), unresolved at <= 20;
+  with 16-um bins in 1.6 mm the estimates ranked lambda = 10-320 (Spearman
+  0.95) and ordered co-localised programs with 4x different reach in 6/6
+  runs. Profile at two or three bin sizes.
+* **Control-calibrated tests on other data types.** Negative-control tiles
+  (leave-one-out, 24 each): Xenium coculture far from EC cells 1/24 called
+  (old test 24/24), EC-dense tiles 7/8, planted programs 67 / 96%; Visium HD
+  synovium tiles without lining 0/24 (old 10/24), lining tiles 3/8, planted
+  21 / 42%; organoid 150-um tiles 1/24 (old 23/24) but no power at that tile
+  size. With fewer than 19 controls the empirical control p-value cannot
+  fall below 0.05; `rff_program_test()` now warns and uses a Gaussian
+  approximation.
+* `rff_program_test_joint(crossfit = TRUE, control = )`: cross-fitted,
+  control-calibrated group test (median window z along each pooled
+  direction, null from pseudo-target groups of controls; the control
+  reference now stores cross-fitting matrices). Null groups 1/12 (real),
+  0/6 (simulation); shared programs 4/6 simulated groups, 2/4 coculture,
+  0/4 Visium HD, 0/4 organoid planted groups - calibrated, but not more
+  powerful than per-window tests yet.
+* The held-out statistic of `rff_transfer_test()` rejected 6/6 targets with
+  the program and 0/6 without (19 permutations); it is slower than, and not
+  better than, the default score statistic.
+* **Experimental prototypes.** `rff_lengthscale_vi()`: length scale by the
+  variational evidence (Gaussian variational field posterior, Poisson
+  likelihood, nugget; CG, Lanczos and Hutchinson with FFT products);
+  `rff_lengthscale_mcmc()`: reference sampler (elliptical slice sampling,
+  Metropolis on length scale and amplitude); `fit_spatial_rff(family =
+  "multinomial")`: counts given each bin's total. On synthetic fields VI,
+  profile and MCMC agreed (GP length scales 5-80 within 1.5x); on real
+  spike-ins VI was no better than the profile and 5-15x slower; the
+  multinomial likelihood did not lower false calls (calibrated 1 vs 1 of 24
+  tiles, old test 11 vs 12). The held-out profile stays the default.
+
 ## Residual RFLVM: method fixes after the September 2026 evaluations
 
 * **Length scales are now estimated by profiling.** `fit_spatial_rff()`

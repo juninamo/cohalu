@@ -128,15 +128,26 @@
 #' the held-out bins; this is the same for every length scale and does not
 #' move the maximum, but it makes the gains conservative.
 #'
-#' Validation (6-gene response programs spiked into a real 0.8 x 0.8 mm
-#' RA Xenium region around hidden producer cells, decaying as
-#' \eqn{e^{-d/\lambda}}, 8 um bins, 2 seeds per \eqn{\lambda}): Spearman
-#' correlation of the estimate with \eqn{\lambda} = 10-320 um was 0.89, but
-#' the estimates are strongly compressed (about 25 um at \eqn{\lambda} =
-#' 10, 40-70 um at \eqn{\lambda} = 320): they rank reaches, they do not
-#' measure them. The estimate is the RBF length scale that best
-#' interpolates the field, not an exponential decay length, and scales
-#' beyond about a tenth of the window are poorly identified.
+#' **Bin size and window decide what is measured.** Responses are carried
+#' by single cells, so at fine bins (8 um) the dominant correlation of a
+#' response map is the cell (half-correlation distance about 5 um in
+#' spike-ins), and the profile returns 25-50 um whatever the reach. The
+#' envelope (the reach) is seen at bins that average several cells, and
+#' the window must be much larger than it. Compression diagnosis on
+#' spike-ins (6-gene programs added to non-T cells of a real RA section
+#' around hidden producers, decaying as \eqn{e^{-d/\lambda}}, same number
+#' of added transcripts for every \eqn{\lambda}; 2 seeds): with 32-um bins in
+#' a 3.2-mm window the profiled length scale converted by [rff_reach()]
+#' was within a factor 1.5 of \eqn{\lambda} for \eqn{\lambda} = 40-160 um
+#' (6/6; Spearman 0.98 for \eqn{\lambda} >= 40), about half of it at
+#' \eqn{\lambda} = 320 (window limit) and meaningless for
+#' \eqn{\lambda} <= 20 (below the bin resolution). With 16-um bins in a
+#' 1.6-mm window the estimates ranked \eqn{\lambda} = 10-320 (Spearman
+#' 0.95) and ordered co-localised programs with 4x different reach in 6/6
+#' runs, but compressed (reach 25-95 um). Recommended: profile at two or
+#' three bin sizes; treat a reach as measured only when it is at least
+#' 1.5 bins and at most about a twentieth of the window at that bin size,
+#' and otherwise report the ranking.
 #'
 #' @param fit Output of [fit_spatial_rff()] (preferably `basis = "grid"`).
 #' @param binned The `binned_transcripts` object used for the fit.
@@ -568,6 +579,13 @@ print.rff_control <- function(x, ...) {
     out$z_control_dir <- vapply(zd, `[[`, 0, "z")
     Zc <- matrix(control$loo$z_dir, nrow(E))
     out$p_control_dir <- vapply(seq_len(k), function(j) (1 + sum(Zc[, j] >= out$z_control_dir[j])) / (nrow(E) + 1), 0)
+    if (nrow(E) + 1 < 1 / alpha) {
+      # too few controls for an empirical p-value below alpha: Gaussian tail of the controls' leave-one-out z
+      warning(sprintf("Only %d control windows: p_control / p_control_dir use a Gaussian approximation (>= %d controls give empirical p-values).",
+                      nrow(E), ceiling(1 / alpha) - 1))
+      out$p_control_dir <- vapply(seq_len(k), function(j) stats::pnorm(out$z_control_dir[j], mean(Zc[, j]), max(stats::sd(Zc[, j]), 1e-12), lower.tail = FALSE), 0)
+      out$p_control <- vapply(seq_len(k), function(j) stats::pnorm(out$excess[j], mean(E[, j]), max(stats::sd(E[, j]), 1e-12), lower.tail = FALSE), 0)
+    }
     call <- call & (if (control_stat == "rank") out$p_control else out$p_control_dir) <= alpha
   }
   out$effect_threshold <- thr
@@ -821,7 +839,8 @@ rff_transfer_test <- function(loadings, fits, binned, statistic = c("score", "he
   if (!is.null(control)) {
     # group statistic: mean held-out excess of the target windows along the group's directions minus the mean
     # excess of the control windows along the same directions; null from pseudo-target groups of controls
-    stat_of <- function(Eg, dirs, idx_ctrl) colMeans(Eg) - colMeans(.rff_ctrl_excess(control, dirs, idx_ctrl))
+    stat_of <- function(Eg, dirs, idx_ctrl) { Ec <- .rff_ctrl_excess(control, dirs, idx_ctrl)
+      apply(sweep(sweep(Eg, 2, colMeans(Ec)), 2, pmax(apply(Ec, 2, stats::sd), 1e-6), "/"), 2, stats::median) }  # median window z vs the controls along each direction
     Tobs <- stat_of(E, (obs$VA + obs$VB) / 2, seq_along(control$C))
     nc <- length(control$M); m <- min(length(fits), nc - 3)
     if (m < 1) stop("Too few control windows for the group null.")

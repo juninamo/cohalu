@@ -103,15 +103,26 @@ the cellularity field come from the full-data fit and therefore also saw
 the held-out bins; this is the same for every length scale and does not
 move the maximum, but it makes the gains conservative.
 
-Validation (6-gene response programs spiked into a real 0.8 x 0.8 mm
-RA Xenium region around hidden producer cells, decaying as
-\eqn{e^{-d/\lambda}}, 8 um bins, 2 seeds per \eqn{\lambda}): Spearman
-correlation of the estimate with \eqn{\lambda} = 10-320 um was 0.89, but
-the estimates are strongly compressed (about 25 um at \eqn{\lambda} =
-10, 40-70 um at \eqn{\lambda} = 320): they rank reaches, they do not
-measure them. The estimate is the RBF length scale that best
-interpolates the field, not an exponential decay length, and scales
-beyond about a tenth of the window are poorly identified.
+**Bin size and window decide what is measured.** Responses are carried
+by single cells, so at fine bins (8 um) the dominant correlation of a
+response map is the cell (half-correlation distance about 5 um in
+spike-ins), and the profile returns 25-50 um whatever the reach. The
+envelope (the reach) is seen at bins that average several cells, and
+the window must be much larger than it. Compression diagnosis on
+spike-ins (6-gene programs added to non-T cells of a real RA section
+around hidden producers, decaying as \eqn{e^{-d/\lambda}}, same number
+of added transcripts for every \eqn{\lambda}; 2 seeds): with 32-um bins in
+a 3.2-mm window the profiled length scale converted by [rff_reach()]
+was within a factor 1.5 of \eqn{\lambda} for \eqn{\lambda} = 40-160 um
+(6/6; Spearman 0.98 for \eqn{\lambda} >= 40), about half of it at
+\eqn{\lambda} = 320 (window limit) and meaningless for
+\eqn{\lambda} <= 20 (below the bin resolution). With 16-um bins in a
+1.6-mm window the estimates ranked \eqn{\lambda} = 10-320 (Spearman
+0.95) and ordered co-localised programs with 4x different reach in 6/6
+runs, but compressed (reach 25-95 um). Recommended: profile at two or
+three bin sizes; treat a reach as measured only when it is at least
+1.5 bins and at most about a twentieth of the window at that bin size,
+and otherwise report the ranking.
 }
 \examples{
 \donttest{
