@@ -495,8 +495,12 @@ E_{ab} = \frac{n_a n_b}{N (N - 1)}\, P_{\mathrm{all}},
 $$
 
 and $\log_2((P_{ab} + c) / (E_{ab} + c))$ is 0 without co-localization.
-Genes are clustered (average linkage, distance $\max M - M$) into modules;
-`module_enrichment()` tests any gene sets per module with the
+Genes are clustered (average linkage, distance $\max M - M$) into modules.
+Large modules can chain (populations that share a niche); with
+`method = "profile"`, or per module with `colocalization_submodules()`,
+genes are instead grouped by their co-localization profiles (rows of $M$;
+distance $1 - \mathrm{cor}$, Ward linkage), with the number of groups
+chosen by the mean silhouette width. `module_enrichment()` tests any gene sets per module with the
 hypergeometric test and BH.
 
 # `search_interaction_spot()` — connected-component spots

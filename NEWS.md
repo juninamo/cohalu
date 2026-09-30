@@ -1,5 +1,26 @@
 # cohalu 0.99.3
 
+## Co-localization sub-modules
+
+* `colocalization_modules(method = "profile")` clusters genes by the
+  similarity of their co-localization profiles (rows of the O/E matrix;
+  distance 1 - cor, Ward.D2), with the number of modules chosen by mean
+  silhouette when `n_modules = NULL`. Average linkage on max - O/E stays the
+  default.
+* New `colocalization_submodules(M, modules, module = "M1", k = NULL,
+  k_range = 2:8)` splits one module into sub-modules by profile similarity
+  (k by mean silhouette) and returns membership, within-sub-module O/E,
+  the silhouette table and top genes. Large modules of populations that
+  share a niche chain under average linkage (cuts only peel off single
+  genes): a 170-gene synovial module (8-um bins, r = 20 um) split into four
+  sub-modules (lining FLS, macrophage, MHC-II antigen-presenting, diffuse;
+  mean silhouette 0.53). In simulations with two sub-populations in one
+  co-localizing group, average linkage merged them and the profile split
+  separated them.
+* `module_enrichment()` accepts the output of `colocalization_submodules()`
+  (background: all genes of the O/E matrix) and no longer mislabels modules
+  whose names contain a dot.
+
 ## Residual RFLVM: second round (reach, other data types, joint test, VI prototype)
 
 * **Length-scale compression explained.** An exp(-d / lambda) response has an

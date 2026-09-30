@@ -96,7 +96,9 @@ The notebooks behind these pages are in [`vignettes/`](vignettes/).
 - `colocalization_per_sample()` feeds `compare_groups()`
 - Unsupervised, gene-level: `colocalization_gene_matrix()` (gene x gene
   log2 O/E of transcript pairs within a radius), `colocalization_modules()`
-  (co-localizing gene modules), `module_enrichment()` (any pathways or
+  (co-localizing gene modules; `method = "profile"` groups genes by
+  co-localization profile), `colocalization_submodules()` (split a large
+  module into sub-populations), `module_enrichment()` (any pathways or
   marker lists) and `module_enrichr()` (enrichR)
 
 ## How COHALU fits with related tools

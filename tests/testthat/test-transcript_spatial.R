@@ -119,6 +119,51 @@ test_that("gene-level co-localization modules recover planted gene sets", {
   expect_equal(sum(en$padj < 0.05), 3)
 })
 
+test_that("profile clustering splits a co-localizing module into its sub-populations", {
+  # A and B share a niche (one co-localizing group), each with its own field
+  tx <- simulate_transcripts(gene_sets = c("A", "B", "C", "D"), n_genes_per_set = 6, size = 240,
+                             rate = 0.03, coloc = c(A = 1.5, B = 1.5), set_sd = 0.6, seed = 1)
+  truth <- attr(tx, "truth"); sets <- split(truth$genes, truth$set_of)
+  b <- bin_transcripts(tx, bin_size = 4, tissue_radius = Inf)
+  M <- colocalization_gene_matrix(b, radius = 12)
+  set_of <- function(g) truth$set_of[match(g, truth$genes)]
+  # average linkage (default) merges A and B into one module
+  mods <- colocalization_modules(M, n_modules = 3)
+  m1 <- mods$modules$gene[mods$modules$module %in% "M1"]
+  expect_setequal(m1, c(sets$A, sets$B))
+  expect_setequal(mods$modules$gene[mods$modules$module %in% "M1"],
+                  colocalization_modules(M)$modules$gene[colocalization_modules(M)$modules$module %in% "M1"])
+  # the profile split of M1 separates them, k chosen by silhouette
+  sub <- colocalization_submodules(M, mods, module = "M1")
+  expect_equal(sub$k, 2)
+  expect_equal(nrow(sub$silhouette), 7)
+  expect_gt(sub$silhouette$mean_silhouette[sub$silhouette$k == 2], 0.5)
+  tab <- table(set_of(sub$modules$gene), sub$modules$module)
+  expect_equal(sum(apply(tab, 1, max)), 12)              # each set in one sub-module
+  expect_true(all(apply(tab, 2, max) == 6))
+  expect_setequal(sub$summary$module, c("M1.1", "M1.2"))
+  expect_true(all(sub$modules$parent == "M1"))
+  expect_true(all(sub$summary$mean_oe > sub$silhouette$between_oe[sub$silhouette$k == 2]))
+  expect_equal(sub$universe, rownames(M))
+  # module_enrichment() works on the sub-modules (background: all genes of M)
+  en <- module_enrichment(sub, sets)
+  sig <- en[en$padj < 0.05, ]
+  expect_equal(nrow(sig), 2)
+  expect_setequal(sig$gene_set, c("A", "B"))
+  expect_true(all(sig$set_size == 6))
+  # fixed k and a gene vector also work
+  sub2 <- colocalization_submodules(M, m1, k = 2)
+  expect_equal(sort(sub2$summary$size), c(6, 6))
+  expect_error(colocalization_submodules(M, mods, module = "M9"), "not found")
+  # method = "profile" for the whole matrix recovers all four sets
+  p4 <- colocalization_modules(M, method = "profile", n_modules = 4)
+  tab4 <- table(set_of(p4$modules$gene), p4$modules$module)
+  expect_true(all(apply(tab4, 1, max) == 6) && all(apply(tab4, 2, max) == 6))
+  pa <- colocalization_modules(M, method = "profile")
+  expect_equal(pa$method, "profile")
+  expect_true(all(c("k", "mean_silhouette", "within_oe", "between_oe") %in% names(pa$silhouette)))
+})
+
 test_that("gene-level O/E is ~0 when gene labels are random", {
   set.seed(4); n <- 20000
   tx <- data.frame(x = runif(n, 0, 300), y = runif(n, 0, 300))

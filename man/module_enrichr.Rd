@@ -11,7 +11,8 @@ module_enrichr(
 )
 }
 \arguments{
-\item{modules}{Output of [colocalization_modules()].}
+\item{modules}{Output of [colocalization_modules()] or
+[colocalization_submodules()].}
 
 \item{databases}{enrichR libraries, e.g. `"GO_Biological_Process_2023"`,
 `"CellMarker_2024"`, `"MSigDB_Hallmark_2020"`.}

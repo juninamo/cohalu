@@ -7,12 +7,14 @@
 module_enrichment(modules, gene_sets, universe = NULL, min_overlap = 1)
 }
 \arguments{
-\item{modules}{Output of [colocalization_modules()] (or its `modules`
-data.frame).}
+\item{modules}{Output of [colocalization_modules()] or
+[colocalization_submodules()] (or its `modules` data.frame).}
 
 \item{gene_sets}{Named list of character vectors.}
 
-\item{universe}{Background genes (default: all clustered genes).}
+\item{universe}{Background genes (default: the `universe` element of
+`modules`, i.e. all genes of the O/E matrix, or else all genes in the
+`modules` data.frame).}
 
 \item{min_overlap}{Minimum overlap to report.}
 }

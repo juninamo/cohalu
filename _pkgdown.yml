@@ -106,6 +106,7 @@ reference:
   - pcf_matrix
   - colocalization_gene_matrix
   - colocalization_modules
+  - colocalization_submodules
   - module_enrichment
   - module_enrichr
   - rff_programs
