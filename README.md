@@ -303,7 +303,8 @@ permutation-based multiple-testing correction and the local O/E; see
 [NEWS](https://juninamo.github.io/cohalu/news/index.html).
 
 ## 📝 Citation 
-Jun Inamo, Roselyn Fierkens, Michael R. Clay, Anna Helena Jonsson, Clara Lin, Kari Hayes, Nathan Rogers, Heather Leach, Kentaro Yomogida. Spatial transcriptomics reveals immune–stromal crosstalk within the synovium of patients with juvenile idiopathic arthritis. [*JCI Insight* 2026;11(1):e198074](https://doi.org/10.1172/jci.insight.198074). doi:[10.1172/jci.insight.198074](https://doi.org/10.1172/jci.insight.198074)
+Jun Inamo, Roselyn Fierkens, Michael R. Clay, Anna Helena Jonsson, Clara Lin, Kari Hayes, Nathan Rogers, Heather Leach, Kentaro Yomogida. **Spatial transcriptomics reveals immune–stromal crosstalk within the synovium of patients with juvenile idiopathic arthritis**. [*JCI Insight* 2026;11(1):e198074](https://doi.org/10.1172/jci.insight.198074). doi:[10.1172/jci.insight.198074](https://doi.org/10.1172/jci.insight.198074)
+Jun Inamo, Kazuoto Hiramoto, Hajime Inokuchi, Masatoshi Kawai, Kazuyuki Tsunoda, Satoshi Usuda, Junko Kuramoto, Yae Kanai, Tsutomu Takeuchi, Kazuyoshi Ishigaki, Masaru Takeshita, Yuko Kaneko. **Spatial deconstruction of salivary glands and kidneys in Sjögren’s disease reveals shared immune–stromal niches and an anti-ARS-associated glandular interferon-γ response.** *in preparation*
 
 ## Contact
 For questions or issues, please open a GitHub issue or contact:
