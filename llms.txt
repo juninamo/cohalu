@@ -5,8 +5,8 @@
 
 > COHALU is the updated version of **spatialCooccur**, renamed in
 > v0.99.3. Function names and arguments are unchanged: replace
-> [`library(spatialCooccur)`](https://juninamo.github.io/spatialCooccur/)
-> with [`library(cohalu)`](https://juninamo.github.io/cohalu/).
+> [`library(spatialCooccur)`](https://rdrr.io/r/base/library.html) with
+> [`library(cohalu)`](https://juninamo.github.io/cohalu/).
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17498341.svg)](https://doi.org/10.5281/zenodo.17498341)
 [![Website](https://img.shields.io/badge/docs-juninamo.github.io%2Fcohalu-4a3aa7)](https://juninamo.github.io/cohalu/)
@@ -347,11 +347,18 @@ permutation-based multiple-testing correction and the local O/E; see
 ## 📝 Citation
 
 Jun Inamo, Roselyn Fierkens, Michael R. Clay, Anna Helena Jonsson, Clara
-Lin, Kari Hayes, Nathan Rogers, Heather Leach, Kentaro Yomogida. Spatial
-transcriptomics reveals immune–stromal crosstalk within the synovium of
-patients with juvenile idiopathic arthritis. [*JCI Insight*
+Lin, Kari Hayes, Nathan Rogers, Heather Leach, Kentaro Yomogida.
+**Spatial transcriptomics reveals immune–stromal crosstalk within the
+synovium of patients with juvenile idiopathic arthritis**. [*JCI
+Insight*
 2026;11(1):e198074](https://doi.org/10.1172/jci.insight.198074).
 <doi:%5B10.1172/jci.insight.198074>\](<https://doi.org/10.1172/jci.insight.198074>)
+Jun Inamo, Kazuoto Hiramoto, Hajime Inokuchi, Masatoshi Kawai, Kazuyuki
+Tsunoda, Satoshi Usuda, Junko Kuramoto, Yae Kanai, Tsutomu Takeuchi,
+Kazuyoshi Ishigaki, Masaru Takeshita, Yuko Kaneko. **Spatial
+deconstruction of salivary glands and kidneys in Sjögren’s disease
+reveals shared immune–stromal niches and an anti-ARS-associated
+glandular interferon-γ response.** *in preparation*
 
 ## Contact
 
