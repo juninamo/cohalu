@@ -1,5 +1,24 @@
 # cohalu 0.99.3
 
+## Radius neighbourhoods are no longer truncated (behaviour change)
+
+* Radius-based functions used `RANN::nn2(searchtype = "radius")`, which
+  returns only the `k` nearest cells within the radius. In dense tissue the
+  neighbourhoods were silently truncated, and ratios stopped changing with
+  the radius once `k` was reached. All cells within the radius are now used
+  (`dbscan::frNN()`, new dependency). Results change wherever the cap was
+  reached.
+* `calc_co_occurrence_for_radius()` and `cooccur_ratio_per_sample()`: `k`
+  now defaults to `NULL` (no cap; previously 30).
+* `cooccur_local_oe()`: `neighbors.k` defaults to `NULL` (previously 100).
+* `search_interaction_spot()` and `interaction_spot_per_sample()`:
+  `neighbors.k` defaults to `NULL` (previously 200).
+* `cooccur_local()`, `cooccur_local.Seurat()` and
+  `cooccur_local_per_sample()`: `neighbors.k` now sets only the diffusion
+  graph; it also capped the radius search before. New argument `radius_k`
+  (default `NULL`); `radius_k = neighbors.k` restores the former neighbourhoods.
+* A numeric cap gives the former results and warns when cells reach it.
+
 ## Documentation
 
 * New article "When to use the residual RFLVM (and when not)"

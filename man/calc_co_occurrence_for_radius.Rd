@@ -9,7 +9,7 @@ calc_co_occurrence_for_radius(
   radius,
   sample_key,
   cluster_key,
-  k = 30
+  k = NULL
 )
 }
 \arguments{
@@ -21,7 +21,10 @@ calc_co_occurrence_for_radius(
 
 \item{cluster_key}{Metadata column specifying cluster labels.}
 
-\item{k}{Maximum number of neighbors to consider.}
+\item{k}{Optional cap on the cells returned per cell, counting the cell
+itself. `NULL` (default) uses every cell within `radius`. A number keeps
+only the `k` nearest cells, so the result stops changing with `radius`
+once the cap is reached; a warning reports how many cells reached it.}
 }
 \value{
 A list with co-occurrence count and enrichment ratio matrices.

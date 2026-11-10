@@ -11,7 +11,8 @@ cooccur_local(
   connectivity_key = "nn",
   neighbors.k = 20,
   radius = 30,
-  maxnsteps = 1
+  maxnsteps = 1,
+  radius_k = NULL
 )
 }
 \arguments{
@@ -23,7 +24,8 @@ cooccur_local(
 
 \item{connectivity_key}{Graph type to use.}
 
-\item{neighbors.k}{Number of neighbors.}
+\item{neighbors.k}{Number of neighbors of the diffusion graph. It no longer
+limits the radius search; see `radius_k`.}
 
 \item{radius}{Radius for neighborhood.}
 
@@ -32,6 +34,10 @@ cooccur_local(
 the kurtosis of the scores decreases by less than 3 between steps
 (checked after step 3). `0` returns the raw 0/1 indicator. Versions
 <= 0.99.1 always performed a single step regardless of `maxnsteps`.}
+
+\item{radius_k}{Optional cap on the cells returned per cell by the radius
+search, counting the cell itself. `NULL` (default) uses every cell within
+`radius`.}
 }
 \value{
 Data.frame with scores.

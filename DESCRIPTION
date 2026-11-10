@@ -29,6 +29,7 @@ Imports:
     dplyr,
     Matrix,
     RANN,
+    dbscan,
     igraph,
     magrittr,
     parallel,

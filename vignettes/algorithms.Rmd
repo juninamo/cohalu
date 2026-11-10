@@ -46,8 +46,8 @@ label (e.g. cell type). For each function we additionally use:
   exactly with a kd-tree (`RANN::nn2(coords, k = k)`).
 * $d_v = \sum_u A_{uv}$ — the (in-)degree of $v$ in the kNN graph.
 * $N_r(v) = \{u \in \mathcal{V}\setminus\{v\} : \lVert \mathbf{x}_u -
-  \mathbf{x}_v \rVert \le r\}$ — radius-$r$ neighborhood, computed with
-  `RANN::nn2(..., searchtype = "radius", radius = r, k = k_\max)`.
+  \mathbf{x}_v \rVert \le r\}$ — radius-$r$ neighborhood, computed exactly
+  with `dbscan::frNN(coords, eps = r)`, without a limit on its size.
 * $\mathcal{V}_c = \{v : c(v) = c\}$ — the set of cells in cluster $c$.
 
 # `generate_sim()` — synthetic spatial layouts
@@ -289,8 +289,8 @@ conditional-probability ratio instead of a z-score.
 
 ### Step 1 — radius-based neighbor counts
 
-For each cell $v$, find its radius neighborhood $N_r(v)$ via `RANN::nn2`
-(with cap $k$). Tally pairs by cluster:
+For each cell $v$, find its radius neighborhood $N_r(v)$ via
+`dbscan::frNN`. Tally pairs by cluster:
 
 $$
 C_{ij} \;=\; \sum_{v \in \mathcal{V}_{c_i}}\; \bigl|N_r(v) \cap \mathcal{V}_{c_j}\bigr|.

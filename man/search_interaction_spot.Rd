@@ -9,7 +9,7 @@ search_interaction_spot(
   fov,
   radius,
   n_min,
-  neighbors.k = 200,
+  neighbors.k = NULL,
   cell_id = cell_id,
   cluster_col = cluster_col,
   target_cluster = target_cluster
@@ -24,7 +24,8 @@ search_interaction_spot(
 
 \item{n_min}{Minimum number of cells to qualify as a spot.}
 
-\item{neighbors.k}{Max number of neighbors to consider.}
+\item{neighbors.k}{Optional cap on the cells returned per cell, counting
+the cell itself. `NULL` (default) uses every cell within `radius`.}
 
 \item{cell_id}{Vector of target cell IDs.}
 

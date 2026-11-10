@@ -16,7 +16,8 @@ cooccur_local_per_sample(
   neighbors.k = 20,
   radius = 30,
   maxnsteps = 1,
-  summarize = c("mean", "q90", "pos_rate", "log2_oe")
+  summarize = c("mean", "q90", "pos_rate", "log2_oe"),
+  radius_k = NULL
 )
 }
 \arguments{
@@ -32,7 +33,8 @@ cluster / patient column names. See [build_sample_design()].}
 \item{unit}{"image" or "patient" (averaged across images of the same
 patient).}
 
-\item{neighbors.k}{Number of neighbors.}
+\item{neighbors.k}{Number of neighbors of the diffusion graph. It no longer
+limits the radius search; see `radius_k`.}
 
 \item{radius}{Radius for neighborhood.}
 
@@ -50,6 +52,10 @@ its expectation under label permutation (see [cooccur_local_oe()]). `log2_oe` is
 abundance of the two cell types and for cell density and is the
 recommended summary for group comparison; "mean" is unchanged by the
 (mass-conserving) diffusion and grows with abundance.}
+
+\item{radius_k}{Optional cap on the cells returned per cell by the radius
+search, counting the cell itself. `NULL` (default) uses every cell within
+`radius`.}
 }
 \value{
 A data.frame with one row per sample carrying the requested

@@ -12,7 +12,7 @@ cooccur_ratio_per_sample(
   patient_key = NULL,
   unit = c("image", "patient"),
   radius = 30,
-  k = 30,
+  k = NULL,
   cluster_levels = NULL
 )
 }
@@ -26,15 +26,16 @@ cooccur_ratio_per_sample(
 
 \item{radius}{Radius to define local neighborhood.}
 
-\item{k}{Maximum number of neighbors to consider.}
+\item{k}{Optional cap on the cells returned per cell, counting the cell
+itself. `NULL` (default) uses every cell within `radius`. A number keeps
+only the `k` nearest cells, so the result stops changing with `radius`
+once the cap is reached; a warning reports how many cells reached it.}
 
 \item{cluster_levels}{Optional vector of cluster levels.}
 }
 \value{
 A data.frame with one row per `sample_id x cluster_i x cluster_j`,
   columns `ratio`, `count`, `group`, `patient`, `n_cells`, `n_i`, `n_j`.
-  Note that `k` caps the number of neighbours returned per cell; in dense
-  tissue choose `k` large enough that the radius, not `k`, is limiting.
 }
 \description{
 Compute the radius-based co-occurrence count and enrichment ratio per
@@ -48,6 +49,6 @@ df <- generate_sim_groups(n_samples_per_group = 3,
                           seed = 1)
 rs <- cooccur_ratio_per_sample(df, sample_key = "sample_id",
                                group_key = "group", cluster_key = "cell_type",
-                               patient_key = "patient", radius = 20, k = 30)
+                               patient_key = "patient", radius = 20)
 head(rs)
 }

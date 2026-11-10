@@ -263,7 +263,10 @@ permute_clusters <- function(adj, int_clust, n_cls, cluster_data, transformation
 #' @param radius Radius to define local neighborhood.
 #' @param sample_key Metadata column specifying sample identity.
 #' @param cluster_key Metadata column specifying cluster labels.
-#' @param k Maximum number of neighbors to consider.
+#' @param k Optional cap on the cells returned per cell, counting the cell
+#'   itself. `NULL` (default) uses every cell within `radius`. A number keeps
+#'   only the `k` nearest cells, so the result stops changing with `radius`
+#'   once the cap is reached; a warning reports how many cells reached it.
 #'
 #' @return A list with co-occurrence count and enrichment ratio matrices.
 #' @export
@@ -277,7 +280,7 @@ permute_clusters <- function(adj, int_clust, n_cls, cluster_data, transformation
 #'                                      sample_key = "sample_id",
 #'                                      cluster_key = "cell_type")
 #' round(res$ratio_mat, 2)
-calc_co_occurrence_for_radius <- function(seurat_obj, radius, sample_key, cluster_key, k = 30) {
+calc_co_occurrence_for_radius <- function(seurat_obj, radius, sample_key, cluster_key, k = NULL) {
   all_clusters <- levels(factor(seurat_obj@meta.data[[cluster_key]]))
 
   co_occur_count <- matrix(
@@ -302,31 +305,9 @@ calc_co_occurrence_for_radius <- function(seurat_obj, radius, sample_key, cluste
         ]
       )
 
-    res <- RANN::nn2(
-      data       = coords[, c("x", "y")],
-      query      = coords[, c("x", "y")],
-      searchtype = "radius",
-      radius     = radius,
-      k          = k
-    )
-
-    clusters_vec <- coords$cluster
-
-    for (i in seq_len(nrow(coords))) {
-      neighbors_i <- res$nn.idx[i, ]
-
-      neighbors_i <- neighbors_i[neighbors_i != i & neighbors_i > 0]
-
-      c_i <- paste0("Cluster", clusters_vec[i])
-
-      if (length(neighbors_i) > 0) {
-        c_neighbors <- paste0("Cluster", clusters_vec[neighbors_i])
-        tab <- table(c_neighbors)
-        for (cn in names(tab)) {
-          co_occur_count[c_i, cn] <- co_occur_count[c_i, cn] + tab[[cn]]
-        }
-      }
-    }
+    co_occur_count <- co_occur_count +
+      .radius_count_matrix(as.matrix(coords[, c("x", "y")]), coords$cluster,
+                           all_clusters, radius, k)
   }
 
   ratio_mat <- compute_co_occurrence_ratio(co_occur_count)
@@ -377,7 +358,8 @@ compute_co_occurrence_ratio <- function(co_occur_count) {
 #' @param fov Field of view identifier.
 #' @param radius Radius threshold for neighborhood.
 #' @param n_min Minimum number of cells to qualify as a spot.
-#' @param neighbors.k Max number of neighbors to consider.
+#' @param neighbors.k Optional cap on the cells returned per cell, counting
+#'   the cell itself. `NULL` (default) uses every cell within `radius`.
 #' @param cell_id Vector of target cell IDs.
 #' @param cluster_col Column name in metadata specifying cluster assignment.
 #' @param target_cluster Target cluster(s) assumed to be interacting.
@@ -395,7 +377,7 @@ compute_co_occurrence_ratio <- function(co_occur_count) {
 #'                                  cluster_col = "cell_type",
 #'                                  target_cluster = c("cell_type_1", "cell_type_2"))
 #' length(unique(spots$cluster_id))
-search_interaction_spot <- function(seurat_object, fov, radius, n_min, neighbors.k = 200, cell_id = cell_id, cluster_col = cluster_col, target_cluster = target_cluster) {
+search_interaction_spot <- function(seurat_object, fov, radius, n_min, neighbors.k = NULL, cell_id = cell_id, cluster_col = cluster_col, target_cluster = target_cluster) {
   coords <- seurat_object[[fov]]$centroids@coords %>%
     as.data.frame() %>%
     dplyr::mutate(cell = Cells(seurat_object[[fov]])) %>%
@@ -405,36 +387,20 @@ search_interaction_spot <- function(seurat_object, fov, radius, n_min, neighbors
   coords <- as.matrix(coords[, c("x", "y")])
   dim(coords)
 
-  res_nn2 <- RANN::nn2(
-    data       = coords,
-    query      = coords,
-    searchtype = "radius",
-    radius     = radius,
-    k          = neighbors.k
-  )
+  pairs <- .radius_pairs(coords, radius, neighbors.k)
+  .warn_radius_cap(pairs$n_capped, nrow(coords), neighbors.k, "neighbors.k")
+
   # (1) Create a ‘cell ID column’ in coords (use the row name if there is one)
   coords_df_ <- coords %>%
     as.data.frame() %>%
     tibble::rownames_to_column(var = "cell_id")
 
-  # (2) Create a graph based on nn.idx that shows ‘cells close to each other’
-  # Draw an edge between the cell in row i and the cells listed in nn.idx[i, ]
-  # (excluding 0)
-  edges <- vector("list", length = nrow(res_nn2$nn.idx))
-  num_clus <- vector("list", length = nrow(res_nn2$nn.idx))
-  for (i in seq_len(nrow(res_nn2$nn.idx))) {
-    # Nearest index (excluding 0)
-    neighbors_i <- res_nn2$nn.idx[i, res_nn2$nn.idx[i, ] != 0]
-    # Add an edge from i to neighbors_i
-    # Use c(rbind(...)) or lapply to make multiple pairs of (i, neighbors_i)
-    edges[[i]] <- c(rbind(i, neighbors_i))
-  }
+  # (2) Link each cell to the cells within the radius
+  edges_vec <- c(rbind(pairs$i, pairs$j))
 
-  edges_vec <- unlist(edges, use.names = FALSE)
-
-  # (3) Creating an igraph object
+  # (3) Creating an igraph object; n keeps cells without neighbours as vertices
   # Assuming an undirected graph (directed=FALSE)
-  g <- igraph::graph(edges = edges_vec, directed = FALSE)
+  g <- igraph::graph(edges = edges_vec, n = nrow(coords), directed = FALSE)
 
   # (4) Search for a connected component to obtain a cluster ID
   comp <- igraph::components(g, mode = "weak")
@@ -750,11 +716,15 @@ nhood_enrichment.Seurat <- function(seurat_obj, cluster_key, neighbors.k = 30, c
 #' @param connectivity_key Graph type to use.
 #' @param cluster_key Metadata column with cluster info.
 #' @param sample_key Metadata column with sample ID.
-#' @param neighbors.k Number of neighbors to build graph.
+#' @param neighbors.k Number of neighbors of the diffusion graph. It no longer
+#'   limits the radius search; see `radius_k`.
 #' @param radius Radius for proximity-based interaction.
 #' @param maxnsteps Maximum number of diffusion steps (each step starts from
 #'   the previous one; early stop on the kurtosis criterion, see
 #'   [cooccur_local()]). `0` returns the raw indicator.
+#' @param radius_k Optional cap on the cells returned per cell by the radius
+#'   search, counting the cell itself. `NULL` (default) uses every cell within
+#'   `radius`.
 #'
 #' @return A data.frame with local co-occurrence scores.
 #' @export
@@ -769,7 +739,7 @@ nhood_enrichment.Seurat <- function(seurat_obj, cluster_key, neighbors.k = 30, c
 #'                            cluster_key = "cell_type", sample_key = "sample_id",
 #'                            neighbors.k = 10, radius = 20, maxnsteps = 1)
 #' summary(sc[[1]])
-cooccur_local.Seurat <- function(seurat_obj, cluster_x, cluster_y, connectivity_key = "nn", cluster_key = "seurat_clusters", sample_key = "sample_id", neighbors.k = 20, radius = 30, maxnsteps = 15) {
+cooccur_local.Seurat <- function(seurat_obj, cluster_x, cluster_y, connectivity_key = "nn", cluster_key = "seurat_clusters", sample_key = "sample_id", neighbors.k = 20, radius = 30, maxnsteps = 15, radius_k = NULL) {
   all_nn <- list()
   cell_id <- vector()
 
@@ -815,39 +785,9 @@ cooccur_local.Seurat <- function(seurat_obj, cluster_x, cluster_y, connectivity_
 
     }
 
-    res_nn2 <- RANN::nn2(
-      data       = coords[, c("x", "y")],
-      query      = coords[, c("x", "y")],
-      searchtype = "radius",
-      radius     = radius,
-      k          = neighbors.k
-    )
-
-
-    local_score_ <- numeric(nrow(coords))
+    local_score_ <- .radius_presence(as.matrix(coords[, c("x", "y")]), coords$cluster,
+                                     cluster_x, cluster_y, radius, radius_k)
     names(local_score_) <- rownames(coords)
-
-    for (i in seq_len(nrow(coords))) {
-      neighbors_i <- res_nn2$nn.idx[i, ]
-      neighbors_i <- neighbors_i[neighbors_i > 0]
-      neighbors_i <- neighbors_i[neighbors_i != i]
-
-      if (length(neighbors_i) == 0) {
-        local_score_[i] <- 0
-        next
-      }
-
-      cluster_vec <- coords$cluster
-      c_vec <- as.character(cluster_vec[neighbors_i])
-
-      cond_present <- any(c_vec == cluster_y) & any(c_vec == cluster_x)
-
-      if (cond_present) {
-        local_score_[i] <- 1
-      } else {
-        local_score_[i] <- 0
-      }
-    }
     local_score <- c(local_score, local_score_)
   }
 
@@ -867,13 +807,17 @@ cooccur_local.Seurat <- function(seurat_obj, cluster_x, cluster_y, connectivity_
 #' @param cluster_x First cluster of interest.
 #' @param cluster_y Second cluster of interest.
 #' @param connectivity_key Graph type to use.
-#' @param neighbors.k Number of neighbors.
+#' @param neighbors.k Number of neighbors of the diffusion graph. It no longer
+#'   limits the radius search; see `radius_k`.
 #' @param radius Radius for neighborhood.
 #' @param maxnsteps Maximum number of diffusion steps. Each step computes
 #'   `s <- (A + I) D^-1 s` from the previous step; diffusion stops early once
 #'   the kurtosis of the scores decreases by less than 3 between steps
 #'   (checked after step 3). `0` returns the raw 0/1 indicator. Versions
 #'   <= 0.99.1 always performed a single step regardless of `maxnsteps`.
+#' @param radius_k Optional cap on the cells returned per cell by the radius
+#'   search, counting the cell itself. `NULL` (default) uses every cell within
+#'   `radius`.
 #'
 #' @return Data.frame with scores.
 #' @export
@@ -884,7 +828,7 @@ cooccur_local.Seurat <- function(seurat_obj, cluster_x, cluster_y, connectivity_
 #' sc <- cooccur_local(df, cluster_x = "cell_type_1", cluster_y = "cell_type_2",
 #'                     neighbors.k = 10, radius = 20)
 #' summary(sc[[1]])
-cooccur_local <- function(df, cluster_x, cluster_y, connectivity_key = "nn", neighbors.k = 20, radius = 30, maxnsteps = 1) {
+cooccur_local <- function(df, cluster_x, cluster_y, connectivity_key = "nn", neighbors.k = 20, radius = 30, maxnsteps = 1, radius_k = NULL) {
   #if (inherits(df, "Seurat")){
   #  return(cooccur_local.Seurat(df, cluster_x, cluster_y, connectivity_key, neighbors.k, radius, maxnsteps))
   #}
@@ -903,38 +847,9 @@ cooccur_local <- function(df, cluster_x, cluster_y, connectivity_key = "nn", nei
     dplyr::mutate(cell = rownames(.)) %>%
     dplyr::rename( cluster = cell_type)
 
-  res_nn2 <- RANN::nn2(
-    data       = coords[, c("x", "y")],
-    query      = coords[, c("x", "y")],
-    searchtype = "radius",
-    radius     = radius,
-    k          = neighbors.k
-  )
-
-  local_score_ <- numeric(nrow(coords))
-  names(local_score_) <- rownames(coords)
-
-  for (i in seq_len(nrow(coords))) {
-    neighbors_i <- res_nn2$nn.idx[i, ]
-    neighbors_i <- neighbors_i[neighbors_i > 0]
-    neighbors_i <- neighbors_i[neighbors_i != i]
-
-    if (length(neighbors_i) == 0) {
-      local_score_[i] <- 0
-      next
-    }
-
-    cluster_vec <- coords$cluster
-    c_vec <- as.character(cluster_vec[neighbors_i])
-    cond_present <- any(c_vec == cluster_y) & any(c_vec == cluster_x)
-
-    if (cond_present) {
-      local_score_[i] <- 1
-    } else {
-      local_score_[i] <- 0
-    }
-  }
-  local_score <- local_score_
+  local_score <- .radius_presence(as.matrix(coords[, c("x", "y")]), coords$cluster,
+                                  cluster_x, cluster_y, radius, radius_k)
+  names(local_score) <- rownames(coords)
 
   s <- .diffuse_scores(adj, local_score, maxnsteps)
   df_ <- data.frame(cooccur_local_scores = as.numeric(s)) %>%

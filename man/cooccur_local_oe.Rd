@@ -9,7 +9,7 @@ cooccur_local_oe(
   cluster_x,
   cluster_y,
   radius = 30,
-  neighbors.k = 100,
+  neighbors.k = NULL,
   bandwidth = radius,
   cluster_col = "cell_type",
   n_perms = 0,
@@ -25,9 +25,10 @@ are used as cell IDs.}
 
 \item{radius}{Neighbourhood radius for the indicator.}
 
-\item{neighbors.k}{Maximum number of neighbours returned per cell. Choose
-it so that the radius, not the cap, is limiting (a message reports how
-many cells hit the cap).}
+\item{neighbors.k}{Optional cap on the neighbours used per cell, excluding
+the cell itself. `NULL` (default) uses every cell within `radius`. A
+number truncates dense neighbourhoods to the nearest cells, and a warning
+reports how many cells reached it.}
 
 \item{bandwidth}{Width of the Gaussian smoothing window (the kernel SD is
 `bandwidth / 2`, truncated at `bandwidth`). Defaults to `radius`.}

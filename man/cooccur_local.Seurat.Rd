@@ -13,7 +13,8 @@ cooccur_local.Seurat(
   sample_key = "sample_id",
   neighbors.k = 20,
   radius = 30,
-  maxnsteps = 15
+  maxnsteps = 15,
+  radius_k = NULL
 )
 }
 \arguments{
@@ -29,13 +30,18 @@ cooccur_local.Seurat(
 
 \item{sample_key}{Metadata column with sample ID.}
 
-\item{neighbors.k}{Number of neighbors to build graph.}
+\item{neighbors.k}{Number of neighbors of the diffusion graph. It no longer
+limits the radius search; see `radius_k`.}
 
 \item{radius}{Radius for proximity-based interaction.}
 
 \item{maxnsteps}{Maximum number of diffusion steps (each step starts from
 the previous one; early stop on the kurtosis criterion, see
 [cooccur_local()]). `0` returns the raw indicator.}
+
+\item{radius_k}{Optional cap on the cells returned per cell by the radius
+search, counting the cell itself. `NULL` (default) uses every cell within
+`radius`.}
 }
 \value{
 A data.frame with local co-occurrence scores.

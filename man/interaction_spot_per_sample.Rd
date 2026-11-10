@@ -14,7 +14,7 @@ interaction_spot_per_sample(
   patient_key = NULL,
   radius,
   n_min,
-  neighbors.k = 200
+  neighbors.k = NULL
 )
 }
 \arguments{
@@ -33,7 +33,8 @@ interaction_spot_per_sample(
 
 \item{n_min}{Minimum number of cells per spot.}
 
-\item{neighbors.k}{Max neighbors to consider.}
+\item{neighbors.k}{Optional cap on the cells returned per cell, counting
+the cell itself. `NULL` (default) uses every cell within `radius`.}
 }
 \value{
 A data.frame with one row per sample carrying `n_spots`,

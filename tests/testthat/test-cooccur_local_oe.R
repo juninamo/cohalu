@@ -4,11 +4,11 @@ test_that("closed-form expected pair counts match the permutation mean", {
   d <- data.frame(x = runif(n, 0, 200), y = runif(n, 0, 200),
                   cell_type = sample(c("A", "B", "C"), n, TRUE, prob = c(.2, .3, .5)))
   nb <- cohalu:::.radius_neighbours(as.matrix(d[, c("x", "y")]), 20, 100)
-  ex <- cohalu:::.pairs_expected(d$cell_type, nb$idx, "A", "B")
+  ex <- cohalu:::.pairs_expected(d$cell_type, nb, "A", "B")
   # permutation mean of the total number of pairs, keeping each cell's own label
   perm_tot <- replicate(300, {
     lab <- d$cell_type; others <- sample(lab)            # approximate: full shuffle
-    sum(cohalu:::.pairs_expected(others, nb$idx, "A", "B")$pairs)
+    sum(cohalu:::.pairs_expected(others, nb, "A", "B")$pairs)
   })
   expect_equal(sum(ex$expected), mean(perm_tot), tolerance = 0.03)
 })

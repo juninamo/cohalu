@@ -16,15 +16,98 @@
 # reports the local log2 observed / expected. Optional permutations give
 # per-cell p-values for hotspots. Cost is O(n k) per pass.
 
-# Internal: radius-neighbour index matrix without self (0 = empty slot).
-.radius_neighbours <- function(xy, radius, k) {
+# ---- Radius neighbourhoods -------------------------------------------------
+#
+# A radius search must return every cell within the radius. RANN::nn2(...,
+# searchtype = "radius") keeps only the k nearest of them, so with a fixed k
+# statistics stop changing once the radius exceeds the k-th neighbour distance.
+# dbscan::frNN() has no such cap (the distance test is the same, d <= radius).
+# A numeric k still goes through RANN, to reproduce capped results.
+
+# Query cells per frNN() call: bounds the memory used by large radii.
+.radius_chunk_size <- 10000L
+
+.radius_chunks <- function(n) split(seq_len(n), ceiling(seq_len(n) / .radius_chunk_size))
+
+# Internal: directed (cell, neighbour) pairs without self, for the rows of xy
+# in `query`. `k` = NULL for no cap, otherwise RANN's number of slots, which
+# includes the cell itself. n_capped counts query cells whose slots are full.
+.radius_pairs <- function(xy, radius, k = NULL, query = seq_len(nrow(xy))) {
+  if (is.null(k)) {
+    nn <- dbscan::frNN(xy, eps = radius, query = xy[query, , drop = FALSE], sort = FALSE)
+    i <- rep(query, lengths(nn$id))
+    j <- as.integer(unlist(nn$id, use.names = FALSE))
+    d <- as.numeric(unlist(nn$dist, use.names = FALSE))
+    n_capped <- 0L
+  } else {
+    if (!is.numeric(k) || length(k) != 1L || is.na(k) || k < 1) {
+      stop("The neighbour cap must be NULL or a single positive number.")
+    }
+    n <- nrow(xy)
+    slots <- min(as.integer(k), n)
+    res <- RANN::nn2(xy, xy[query, , drop = FALSE], k = slots,
+                     searchtype = "radius", radius = radius)
+    hit <- res$nn.idx > 0L
+    i <- rep(query, slots)[hit]
+    j <- res$nn.idx[hit]
+    d <- res$nn.dists[hit]
+    n_capped <- if (slots < n) sum(rowSums(hit) == slots) else 0L
+  }
+  keep <- j != i
+  list(i = i[keep], j = j[keep], dist = d[keep], n_capped = n_capped)
+}
+
+# Internal: as .radius_pairs(), with a cap that excludes the cell itself.
+.radius_neighbours <- function(xy, radius, k = NULL) {
+  .radius_pairs(xy, radius, if (is.null(k)) NULL else k + 1L)
+}
+
+.warn_radius_cap <- function(n_capped, n, k, arg) {
+  if (n_capped > 0L) {
+    warning(sprintf(paste0("%d of %d cells reached %s = %d within the radius, so their ",
+                           "neighbourhoods may be truncated; use %s = NULL for all neighbours."),
+                    n_capped, n, arg, as.integer(k), arg), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+# Internal: cluster x cluster matrix of directed neighbour pairs within radius.
+.radius_count_matrix <- function(xy, clusters, all_clusters, radius, k = NULL) {
   n <- nrow(xy)
-  k <- min(k + 1L, n)
-  res <- RANN::nn2(xy, xy, k = k, searchtype = "radius", radius = radius)
-  idx <- res$nn.idx
-  self <- idx == matrix(seq_len(n), n, ncol(idx))
-  idx[self] <- 0L
-  list(idx = idx, dist = res$nn.dists, n_capped = sum(rowSums(res$nn.idx > 0) == k))
+  L <- length(all_clusters)
+  cl <- match(clusters, all_clusters)
+  counts <- numeric(L^2)
+  n_capped <- 0L
+  for (q in .radius_chunks(n)) {
+    p <- .radius_pairs(xy, radius, k, q)
+    ci <- cl[p$i]
+    cj <- cl[p$j]
+    ok <- !is.na(ci) & !is.na(cj)
+    counts <- counts + tabulate(ci[ok] + (cj[ok] - 1L) * L, nbins = L^2)
+    n_capped <- n_capped + p$n_capped
+  }
+  .warn_radius_cap(n_capped, n, k, "k")
+  matrix(counts, L, L,
+         dimnames = list(paste0("Cluster", all_clusters), paste0("Cluster", all_clusters)))
+}
+
+# Internal: 1 for cells with both cluster_x and cluster_y among the other cells
+# within radius, else 0.
+.radius_presence <- function(xy, labels, cluster_x, cluster_y, radius, k = NULL) {
+  n <- nrow(xy)
+  labels <- as.character(labels)
+  is_x <- labels %in% cluster_x
+  is_y <- labels %in% cluster_y
+  has_x <- has_y <- logical(n)
+  n_capped <- 0L
+  for (q in .radius_chunks(n)) {
+    p <- .radius_pairs(xy, radius, k, q)
+    has_x[p$i[is_x[p$j]]] <- TRUE
+    has_y[p$i[is_y[p$j]]] <- TRUE
+    n_capped <- n_capped + p$n_capped
+  }
+  .warn_radius_cap(n_capped, n, k, "radius_k")
+  as.numeric(has_x & has_y)
 }
 
 # Internal: numbers of cluster_x / cluster_y cells in each neighbourhood, the
@@ -33,16 +116,12 @@
 #   E[n_x n_y]      = N (N - 1) K_x K_y / (M (M - 1))          (x != y)
 #   E[n_x (n_x-1)]  = N (N - 1) K_x (K_x - 1) / (M (M - 1))    (x == y)
 # with M the other cells and K the cells of each type among them.
-.pairs_expected <- function(labels, idx, cluster_x, cluster_y) {
+.pairs_expected <- function(labels, pairs, cluster_x, cluster_y) {
   n <- length(labels)
-  valid <- idx > 0
-  count <- function(is) {
-    m <- matrix(FALSE, nrow(idx), ncol(idx))
-    m[valid] <- is[idx[valid]]
-    rowSums(m)
-  }
+  # as.numeric: products of neighbour counts can overflow integers
+  count <- function(is) as.numeric(tabulate(pairs$i[is[pairs$j]], nbins = n))
   isx <- labels == cluster_x
-  N <- rowSums(valid)
+  N <- as.numeric(tabulate(pairs$i, nbins = n))
   M <- n - 1
   kx <- sum(isx) - isx
   nx <- count(isx)
@@ -85,9 +164,10 @@
 #'   are used as cell IDs.
 #' @param cluster_x,cluster_y The two cell types (may be identical).
 #' @param radius Neighbourhood radius for the indicator.
-#' @param neighbors.k Maximum number of neighbours returned per cell. Choose
-#'   it so that the radius, not the cap, is limiting (a message reports how
-#'   many cells hit the cap).
+#' @param neighbors.k Optional cap on the neighbours used per cell, excluding
+#'   the cell itself. `NULL` (default) uses every cell within `radius`. A
+#'   number truncates dense neighbourhoods to the nearest cells, and a warning
+#'   reports how many cells reached it.
 #' @param bandwidth Width of the Gaussian smoothing window (the kernel SD is
 #'   `bandwidth / 2`, truncated at `bandwidth`). Defaults to `radius`.
 #' @param cluster_col Column holding the cell types.
@@ -110,7 +190,7 @@
 #'                         n_perms = 99)
 #' attr(res, "section_log2_oe")
 #' head(res)
-cooccur_local_oe <- function(df, cluster_x, cluster_y, radius = 30, neighbors.k = 100,
+cooccur_local_oe <- function(df, cluster_x, cluster_y, radius = 30, neighbors.k = NULL,
                              bandwidth = radius, cluster_col = "cell_type",
                              n_perms = 0, pseudocount = 0.5, seed = 1) {
   if (!all(c("x", "y", cluster_col) %in% colnames(df))) {
@@ -123,20 +203,16 @@ cooccur_local_oe <- function(df, cluster_x, cluster_y, radius = 30, neighbors.k 
   xy <- as.matrix(df[, c("x", "y")])
   n <- nrow(xy)
   nb <- .radius_neighbours(xy, radius, neighbors.k)
-  if (nb$n_capped > 0.05 * n) {
-    message(sprintf("%d cells (%.0f%%) reached neighbors.k = %d within the radius; consider a larger neighbors.k.",
-                    nb$n_capped, 100 * nb$n_capped / n, neighbors.k))
-  }
-  ie <- .pairs_expected(labels, nb$idx, cluster_x, cluster_y)
+  ie <- .pairs_expected(labels, nb, cluster_x, cluster_y)
 
   # Gaussian smoothing weights (self included), sigma = bandwidth / 2
   sm <- if (isTRUE(all.equal(bandwidth, radius))) nb else .radius_neighbours(xy, bandwidth, neighbors.k)
+  .warn_radius_cap(max(nb$n_capped, sm$n_capped), n, neighbors.k, "neighbors.k")
   sig <- bandwidth / 2
-  valid <- sm$idx > 0
   w <- exp(-sm$dist^2 / (2 * sig^2))
-  W <- Matrix::sparseMatrix(i = c(row(sm$idx)[valid], seq_len(n)),
-                            j = c(sm$idx[valid], seq_len(n)),
-                            x = c(w[valid], rep(1, n)), dims = c(n, n))
+  W <- Matrix::sparseMatrix(i = c(sm$i, seq_len(n)),
+                            j = c(sm$j, seq_len(n)),
+                            x = c(w, rep(1, n)), dims = c(n, n))
   obs_s <- as.numeric(W %*% ie$pairs)
   exp_s <- as.numeric(W %*% ie$expected)
   out <- data.frame(n_x = ie$n_x, n_y = ie$n_y, pairs = ie$pairs, expected = ie$expected,
@@ -147,7 +223,7 @@ cooccur_local_oe <- function(df, cluster_x, cluster_y, radius = 30, neighbors.k 
     .local_seed(seed)
     exceed <- numeric(n)
     for (r in seq_len(n_perms)) {
-      s_perm <- .pairs_expected(sample(labels), nb$idx, cluster_x, cluster_y)$pairs
+      s_perm <- .pairs_expected(sample(labels), nb, cluster_x, cluster_y)$pairs
       exceed <- exceed + (as.numeric(W %*% s_perm) >= obs_s - 1e-12)
     }
     out$p <- (exceed + 1) / (n_perms + 1)

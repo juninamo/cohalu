@@ -563,7 +563,8 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
                                      patient_key = NULL,
                                      unit = c("image", "patient"),
                                      neighbors.k = 20, radius = 30, maxnsteps = 1,
-                                     summarize = c("mean", "q90", "pos_rate", "log2_oe")) {
+                                     summarize = c("mean", "q90", "pos_rate", "log2_oe"),
+                                     radius_k = NULL) {
   unit <- match.arg(unit)
   summarize <- match.arg(summarize, several.ok = TRUE)
   sl <- .as_sample_list(obj, sample_key = sample_key,
@@ -585,7 +586,7 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
     res <- tryCatch(
       cooccur_local(df_in, cluster_x = cluster_x, cluster_y = cluster_y,
                     neighbors.k = neighbors.k, radius = radius,
-                    maxnsteps = maxnsteps),
+                    maxnsteps = maxnsteps, radius_k = radius_k),
       error = function(e) {
         warning(sprintf("cooccur_local failed for sample '%s': %s", sid, conditionMessage(e)))
         NULL
@@ -603,8 +604,8 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
     if ("q90" %in% summarize) row$q90 <- as.numeric(quantile(sc, 0.9, na.rm = TRUE))
     if ("pos_rate" %in% summarize) row$pos_rate <- mean(sc > 0, na.rm = TRUE)
     if ("log2_oe" %in% summarize) {
-      nb <- .radius_neighbours(as.matrix(df_in[, c("x", "y")]), radius, neighbors.k)
-      ie <- .pairs_expected(df_in$cell_type, nb$idx, cluster_x, cluster_y)
+      nb <- .radius_pairs(as.matrix(df_in[, c("x", "y")]), radius, radius_k)
+      ie <- .pairs_expected(df_in$cell_type, nb, cluster_x, cluster_y)
       row$log2_oe <- log2(sum(ie$pairs) / max(sum(ie$expected), .Machine$double.eps))
     }
     row$n_cells <- nrow(coords)
@@ -628,21 +629,8 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
 # ---- Phase 1b: cooccur_ratio_per_sample ---------------------------------
 
 # Internal: radius-based co-occurrence count + ratio for a single sample.
-.radius_count_one <- function(coords_xy, clusters, all_clusters, radius, k = 30) {
-  res <- RANN::nn2(data = coords_xy, query = coords_xy,
-                   searchtype = "radius", radius = radius, k = k)
-  n <- nrow(coords_xy)
-  i_idx <- rep(seq_len(n), ncol(res$nn.idx))
-  j_idx <- as.vector(res$nn.idx)
-  keep <- j_idx > 0 & j_idx != i_idx
-  adj <- Matrix::sparseMatrix(i = i_idx[keep], j = j_idx[keep], x = 1, dims = c(n, n))
-  cl_idx <- match(clusters, all_clusters)
-  ok <- !is.na(cl_idx)
-  ind <- Matrix::sparseMatrix(i = which(ok), j = cl_idx[ok], x = 1,
-                              dims = c(n, length(all_clusters)))
-  co_occur_count <- as.matrix(Matrix::t(ind) %*% adj %*% ind)
-  dimnames(co_occur_count) <- list(paste0("Cluster", all_clusters),
-                                   paste0("Cluster", all_clusters))
+.radius_count_one <- function(coords_xy, clusters, all_clusters, radius, k = NULL) {
+  co_occur_count <- .radius_count_matrix(coords_xy, clusters, all_clusters, radius, k)
   ratio_mat <- compute_co_occurrence_ratio(co_occur_count)
   list(co_occur_count = co_occur_count, ratio_mat = ratio_mat)
 }
@@ -661,8 +649,6 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
 #'
 #' @return A data.frame with one row per `sample_id x cluster_i x cluster_j`,
 #'   columns `ratio`, `count`, `group`, `patient`, `n_cells`, `n_i`, `n_j`.
-#'   Note that `k` caps the number of neighbours returned per cell; in dense
-#'   tissue choose `k` large enough that the radius, not `k`, is limiting.
 #' @export
 #' @examples
 #' df <- generate_sim_groups(n_samples_per_group = 3,
@@ -672,12 +658,12 @@ cooccur_local_per_sample <- function(obj, sample_key, group_key, cluster_key,
 #'                           seed = 1)
 #' rs <- cooccur_ratio_per_sample(df, sample_key = "sample_id",
 #'                                group_key = "group", cluster_key = "cell_type",
-#'                                patient_key = "patient", radius = 20, k = 30)
+#'                                patient_key = "patient", radius = 20)
 #' head(rs)
 cooccur_ratio_per_sample <- function(obj, sample_key, group_key, cluster_key,
                                      patient_key = NULL,
                                      unit = c("image", "patient"),
-                                     radius = 30, k = 30,
+                                     radius = 30, k = NULL,
                                      cluster_levels = NULL) {
   unit <- match.arg(unit)
   sl <- .as_sample_list(obj, sample_key = sample_key,
@@ -738,7 +724,8 @@ cooccur_ratio_per_sample <- function(obj, sample_key, group_key, cluster_key,
 #' @param cell_id Vector of cell IDs to include. Defaults to all cells.
 #' @param radius Radius defining neighborhood.
 #' @param n_min Minimum number of cells per spot.
-#' @param neighbors.k Max neighbors to consider.
+#' @param neighbors.k Optional cap on the cells returned per cell, counting
+#'   the cell itself. `NULL` (default) uses every cell within `radius`.
 #'
 #' @return A data.frame with one row per sample carrying `n_spots`,
 #'   `mean_spot_size` (number of cells), `n_cells` and `spots_per_1k_cells`.
@@ -761,7 +748,7 @@ interaction_spot_per_sample <- function(seurat_object, sample_key, group_key,
                                         cluster_col, target_cluster,
                                         cell_id = NULL,
                                         patient_key = NULL,
-                                        radius, n_min, neighbors.k = 200) {
+                                        radius, n_min, neighbors.k = NULL) {
   if (!inherits(seurat_object, "Seurat")) {
     stop("interaction_spot_per_sample currently supports Seurat object input only.")
   }
