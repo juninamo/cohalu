@@ -45,6 +45,8 @@ navbar:
         href: articles/algorithms.html
       - text: "When to use the residual RFLVM"
         href: articles/rflvm_when_to_use.html
+      - text: "Co-occurrence ratios across radii"
+        href: articles/radius_dependence.html
 
 articles:
 - title: Tutorials
@@ -62,6 +64,7 @@ articles:
   contents:
   - algorithms
   - articles/rflvm_when_to_use
+  - articles/radius_dependence
 
 reference:
 - title: Simulation
