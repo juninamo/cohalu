@@ -10,7 +10,7 @@ calc_co_occurrence_for_radius(
   radius,
   sample_key,
   cluster_key,
-  k = 30
+  k = NULL
 )
 ```
 
@@ -34,7 +34,11 @@ calc_co_occurrence_for_radius(
 
 - k:
 
-  Maximum number of neighbors to consider.
+  Optional cap on the cells returned per cell, counting the cell itself.
+  \`NULL\` (default) uses every cell within \`radius\`. A number keeps
+  only the \`k\` nearest cells, so the result stops changing with
+  \`radius\` once the cap is reached; a warning reports how many cells
+  reached it.
 
 ## Value
 

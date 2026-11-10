@@ -17,7 +17,7 @@ interaction_spot_per_sample(
   patient_key = NULL,
   radius,
   n_min,
-  neighbors.k = 200
+  neighbors.k = NULL
 )
 ```
 
@@ -53,7 +53,8 @@ interaction_spot_per_sample(
 
 - neighbors.k:
 
-  Max neighbors to consider.
+  Optional cap on the cells returned per cell, counting the cell itself.
+  \`NULL\` (default) uses every cell within \`radius\`.
 
 ## Value
 

@@ -60,7 +60,7 @@
 <span>  <span class="va">fov</span>,</span>
 <span>  <span class="va">radius</span>,</span>
 <span>  <span class="va">n_min</span>,</span>
-<span>  neighbors.k <span class="op">=</span> <span class="fl">200</span>,</span>
+<span>  neighbors.k <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  cell_id <span class="op">=</span> <span class="va">cell_id</span>,</span>
 <span>  cluster_col <span class="op">=</span> <span class="va">cluster_col</span>,</span>
 <span>  target_cluster <span class="op">=</span> <span class="va">target_cluster</span></span>
@@ -88,7 +88,8 @@
 
 
 <dt id="arg-neighbors-k">neighbors.k<a class="anchor" aria-label="anchor" href="#arg-neighbors-k"></a></dt>
-<dd><p>Max number of neighbors to consider.</p></dd>
+<dd><p>Optional cap on the cells returned per cell, counting
+the cell itself. `NULL` (default) uses every cell within `radius`.</p></dd>
 
 
 <dt id="arg-cell-id">cell_id<a class="anchor" aria-label="anchor" href="#arg-cell-id"></a></dt>

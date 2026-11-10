@@ -60,7 +60,7 @@
 <span>  <span class="va">radius</span>,</span>
 <span>  <span class="va">sample_key</span>,</span>
 <span>  <span class="va">cluster_key</span>,</span>
-<span>  k <span class="op">=</span> <span class="fl">30</span></span>
+<span>  k <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -85,7 +85,10 @@
 
 
 <dt id="arg-k">k<a class="anchor" aria-label="anchor" href="#arg-k"></a></dt>
-<dd><p>Maximum number of neighbors to consider.</p></dd>
+<dd><p>Optional cap on the cells returned per cell, counting the cell
+itself. `NULL` (default) uses every cell within `radius`. A number keeps
+only the `k` nearest cells, so the result stops changing with `radius`
+once the cap is reached; a warning reports how many cells reached it.</p></dd>
 
 </dl></div>
     <div class="section level2">

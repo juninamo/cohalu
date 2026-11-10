@@ -34,7 +34,8 @@ cluster label (e.g. cell type). For each function we additionally use:
 - $`d_v = \sum_u A_{uv}`$ — the (in-)degree of $`v`$ in the kNN graph.
 - $`N_r(v) = \{u \in \mathcal{V}\setminus\{v\} : \lVert \mathbf{x}_u -
   \mathbf{x}_v \rVert \le r\}`$ — radius-$`r`$ neighborhood, computed
-  with `RANN::nn2(..., searchtype = "radius", radius = r, k = k_\max)`.
+  exactly with `dbscan::frNN(coords, eps = r)`, without a limit on its
+  size.
 - $`\mathcal{V}_c = \{v : c(v) = c\}`$ — the set of cells in cluster
   $`c`$.
 
@@ -293,8 +294,8 @@ instead of a z-score.
 #### Step 1 — radius-based neighbor counts
 
 For each cell $`v`$, find its radius neighborhood $`N_r(v)`$ via
-[`RANN::nn2`](https://jefferislab.github.io/RANN/reference/nn2.html)
-(with cap $`k`$). Tally pairs by cluster:
+[`dbscan::frNN`](https://michael.hahsler.net/dbscan/reference/frNN.html).
+Tally pairs by cluster:
 
 ``` math
 C_{ij} \;=\; \sum_{v \in \mathcal{V}_{c_i}}\; \bigl|N_r(v) \cap \mathcal{V}_{c_j}\bigr|.
@@ -609,7 +610,7 @@ tutorial](https://juninamo.github.io/cohalu/articles/case_control_tutorial.md).
 ``` r
 
 sessionInfo()
-#> R version 4.6.1 (2026-06-24)
+#> R version 4.6.2 (2026-10-29)
 #> Platform: x86_64-pc-linux-gnu
 #> Running under: Ubuntu 26.04.1 LTS
 #> 
@@ -633,44 +634,33 @@ sessionInfo()
 #> [1] cohalu_0.99.3
 #> 
 #> loaded via a namespace (and not attached):
-#>   [1] deldir_2.0-4           pbapply_1.7-5          gridExtra_2.3.1       
-#>   [4] rlang_1.3.0            magrittr_2.0.5         RcppAnnoy_0.0.23      
-#>   [7] otel_0.2.0             spatstat.geom_3.8-3    matrixStats_1.5.0     
-#>  [10] ggridges_0.5.7         compiler_4.6.1         png_0.1-9             
-#>  [13] systemfonts_1.3.2      vctrs_0.7.3            reshape2_1.4.5        
-#>  [16] stringr_1.6.0          pkgconfig_2.0.3        fastmap_1.2.0         
-#>  [19] promises_1.5.0         rmarkdown_2.32         ragg_1.5.2            
-#>  [22] purrr_1.2.2            xfun_0.62              cachem_1.1.0          
-#>  [25] jsonlite_2.0.0         goftest_1.2-3          later_1.4.8           
-#>  [28] spatstat.utils_3.2-5   irlba_2.4.1            parallel_4.6.1        
-#>  [31] cluster_2.1.8.2        R6_2.6.1               ica_1.0-3             
-#>  [34] spatstat.data_3.1-9    bslib_0.12.0           stringi_1.8.9         
-#>  [37] RColorBrewer_1.1-3     reticulate_1.47.0      spatstat.univar_3.2-0 
-#>  [40] parallelly_1.48.0      lmtest_0.9-40          jquerylib_0.1.4       
-#>  [43] scattermore_1.2        Rcpp_1.1.2             knitr_1.52            
-#>  [46] tensor_1.5.1           future.apply_1.21.0    zoo_1.9-1             
-#>  [49] sctransform_0.4.3      httpuv_1.6.17          Matrix_1.7-5          
-#>  [52] splines_4.6.1          igraph_2.3.4           tidyselect_1.2.1      
-#>  [55] abind_1.4-8            yaml_2.3.12            spatstat.random_3.5-2 
-#>  [58] spatstat.explore_3.8-3 codetools_0.2-20       miniUI_0.1.2          
-#>  [61] listenv_1.1.0          lattice_0.22-9         tibble_3.3.1          
-#>  [64] plyr_1.8.9             shiny_1.14.0           S7_0.2.2              
-#>  [67] ROCR_1.0-12            evaluate_1.0.5         Rtsne_0.17            
-#>  [70] future_1.80.0          fastDummies_1.7.6      desc_1.4.3            
-#>  [73] survival_3.8-6         polyclip_1.10-7        fitdistrplus_1.2-6    
-#>  [76] pillar_1.11.1          Seurat_5.6.0           KernSmooth_2.23-26    
-#>  [79] plotly_4.12.1          generics_0.1.4         RcppHNSW_0.7.0        
-#>  [82] sp_2.2-4               ggplot2_4.0.3          scales_1.4.0          
-#>  [85] globals_0.20.0         xtable_1.8-8           glue_1.8.1            
-#>  [88] tools_4.6.1            data.table_1.18.6.1    RSpectra_0.16-2       
-#>  [91] RANN_2.6.3             fs_2.1.0               dotCall64_1.2         
-#>  [94] cowplot_1.2.0          grid_4.6.1             tidyr_1.3.2           
-#>  [97] nlme_3.1-169           patchwork_1.3.2        cli_3.6.6             
-#> [100] spatstat.sparse_3.2-0  textshaping_1.0.5      spam_2.11-4           
-#> [103] viridisLite_0.4.3      dplyr_1.2.1            uwot_0.2.5            
-#> [106] gtable_0.3.6           sass_0.4.10            digest_0.6.39         
-#> [109] progressr_1.1.0        ggrepel_0.9.8          htmlwidgets_1.6.4     
-#> [112] SeuratObject_5.4.0     farver_2.1.2           htmltools_0.5.9       
-#> [115] pkgdown_2.2.1          lifecycle_1.0.5        httr_1.4.9            
-#> [118] mime_0.13              MASS_7.3-65
+#>  [1] tidyselect_1.2.1    dplyr_1.2.1         farver_2.1.2       
+#>  [4] S7_0.2.2            fastmap_1.2.0       RANN_2.6.3         
+#>  [7] digest_0.6.39       dotCall64_1.2       lifecycle_1.0.5    
+#> [10] cluster_2.1.8.3     SeuratObject_5.4.0  magrittr_2.0.5     
+#> [13] compiler_4.6.2      rlang_1.3.0         sass_0.4.10        
+#> [16] tools_4.6.2         igraph_2.3.4        yaml_2.3.12        
+#> [19] knitr_1.52          sp_2.2-4            plyr_1.8.9         
+#> [22] RColorBrewer_1.1-3  KernSmooth_2.23-27  Rtsne_0.17         
+#> [25] desc_1.4.3          grid_4.6.2          RcppHNSW_0.7.0     
+#> [28] fastDummies_1.7.6   future_1.82.0       progressr_1.1.0    
+#> [31] ggplot2_4.0.3       globals_0.20.0      scales_1.4.0       
+#> [34] MASS_7.3-66         ggridges_0.5.7      cli_3.6.6          
+#> [37] rmarkdown_2.32      ragg_1.5.2          generics_0.1.4     
+#> [40] Seurat_6.0.0        otel_0.3.0          ica_1.0-3          
+#> [43] future.apply_1.21.0 RSpectra_0.16-2     sctransform_0.4.3  
+#> [46] httr_1.4.9          reshape2_1.4.5      pbapply_1.7-5      
+#> [49] cachem_1.1.0        stringr_1.6.0       parallel_4.6.2     
+#> [52] matrixStats_1.5.0   vctrs_0.7.3         Matrix_1.7-6       
+#> [55] jsonlite_2.0.0      patchwork_1.3.2     ggrepel_0.9.8      
+#> [58] irlba_2.4.1         scattermore_1.2     listenv_1.1.0      
+#> [61] systemfonts_1.3.2   jquerylib_0.1.4     pls_2.9-0          
+#> [64] glue_1.8.1          parallelly_1.50.0   spam_2.11-4        
+#> [67] pkgdown_2.2.1       codetools_0.2-20    uwot_0.2.5         
+#> [70] cowplot_1.2.0       RcppAnnoy_0.0.23    stringi_1.8.9      
+#> [73] gtable_0.3.6        tibble_3.3.1        pillar_1.11.1      
+#> [76] htmltools_0.5.9     R6_2.6.1            textshaping_1.0.5  
+#> [79] evaluate_1.0.5      lattice_0.23-1      png_0.1-9          
+#> [82] bslib_0.12.0        Rcpp_1.1.2          gridExtra_2.3.1    
+#> [85] xfun_0.62           fs_2.1.0            pkgconfig_2.0.3
 ```

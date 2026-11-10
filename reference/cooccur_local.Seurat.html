@@ -64,7 +64,8 @@
 <span>  sample_key <span class="op">=</span> <span class="st">"sample_id"</span>,</span>
 <span>  neighbors.k <span class="op">=</span> <span class="fl">20</span>,</span>
 <span>  radius <span class="op">=</span> <span class="fl">30</span>,</span>
-<span>  maxnsteps <span class="op">=</span> <span class="fl">15</span></span>
+<span>  maxnsteps <span class="op">=</span> <span class="fl">15</span>,</span>
+<span>  radius_k <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -97,7 +98,8 @@
 
 
 <dt id="arg-neighbors-k">neighbors.k<a class="anchor" aria-label="anchor" href="#arg-neighbors-k"></a></dt>
-<dd><p>Number of neighbors to build graph.</p></dd>
+<dd><p>Number of neighbors of the diffusion graph. It no longer
+limits the radius search; see `radius_k`.</p></dd>
 
 
 <dt id="arg-radius">radius<a class="anchor" aria-label="anchor" href="#arg-radius"></a></dt>
@@ -108,6 +110,12 @@
 <dd><p>Maximum number of diffusion steps (each step starts from
 the previous one; early stop on the kurtosis criterion, see
 [cooccur_local()]). `0` returns the raw indicator.</p></dd>
+
+
+<dt id="arg-radius-k">radius_k<a class="anchor" aria-label="anchor" href="#arg-radius-k"></a></dt>
+<dd><p>Optional cap on the cells returned per cell by the radius
+search, counting the cell itself. `NULL` (default) uses every cell within
+`radius`.</p></dd>
 
 </dl></div>
     <div class="section level2">

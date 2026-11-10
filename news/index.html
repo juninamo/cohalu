@@ -51,6 +51,19 @@
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.99.3" id="cohalu-0993">cohalu 0.99.3<a class="anchor" aria-label="anchor" href="#cohalu-0993"></a></h2>
 <div class="section level3">
+<h3 id="radius-neighbourhoods-are-no-longer-truncated-behaviour-change-0-99-3">Radius neighbourhoods are no longer truncated (behaviour change)<a class="anchor" aria-label="anchor" href="#radius-neighbourhoods-are-no-longer-truncated-behaviour-change-0-99-3"></a></h3>
+<ul><li>Radius-based functions used <code>RANN::nn2(searchtype = "radius")</code>, which returns only the <code>k</code> nearest cells within the radius. In dense tissue the neighbourhoods were silently truncated, and ratios stopped changing with the radius once <code>k</code> was reached. All cells within the radius are now used (<code><a href="https://michael.hahsler.net/dbscan/reference/frNN.html" class="external-link">dbscan::frNN()</a></code>, new dependency). Results change wherever the cap was reached.</li>
+<li>
+<code><a href="../reference/calc_co_occurrence_for_radius.html">calc_co_occurrence_for_radius()</a></code> and <code><a href="../reference/cooccur_ratio_per_sample.html">cooccur_ratio_per_sample()</a></code>: <code>k</code> now defaults to <code>NULL</code> (no cap; previously 30).</li>
+<li>
+<code><a href="../reference/cooccur_local_oe.html">cooccur_local_oe()</a></code>: <code>neighbors.k</code> defaults to <code>NULL</code> (previously 100).</li>
+<li>
+<code><a href="../reference/search_interaction_spot.html">search_interaction_spot()</a></code> and <code><a href="../reference/interaction_spot_per_sample.html">interaction_spot_per_sample()</a></code>: <code>neighbors.k</code> defaults to <code>NULL</code> (previously 200).</li>
+<li>
+<code><a href="../reference/cooccur_local.html">cooccur_local()</a></code>, <code><a href="../reference/cooccur_local.Seurat.html">cooccur_local.Seurat()</a></code> and <code><a href="../reference/cooccur_local_per_sample.html">cooccur_local_per_sample()</a></code>: <code>neighbors.k</code> now sets only the diffusion graph; it also capped the radius search before. New argument <code>radius_k</code> (default <code>NULL</code>); <code>radius_k = neighbors.k</code> restores the former neighbourhoods.</li>
+<li>A numeric cap gives the former results and warns when cells reach it.</li>
+</ul></div>
+<div class="section level3">
 <h3 id="documentation-0-99-3">Documentation<a class="anchor" aria-label="anchor" href="#documentation-0-99-3"></a></h3>
 <ul><li>New article “When to use the residual RFLVM (and when not)” (<code>vignettes/articles/rflvm_when_to_use.Rmd</code>): positions the residual RFLVM as a discovery-and-transfer tool, with a decision table (supervised distance GLM / C-SIDE / <code><a href="../reference/pcf_cross.html">pcf_cross()</a></code> for known questions), the recommended workflow (<code><a href="../reference/rff_programs.html">rff_programs()</a></code> with a rich offset, negative-control calibration with <code><a href="../reference/rff_control_reference.html">rff_control_reference()</a></code>, <code><a href="../reference/rff_report.html">rff_report()</a></code>, <code><a href="../reference/rff_transfer_test.html">rff_transfer_test()</a></code> on held-out data), pitfalls and a summary of the real-data validation. <code><a href="../reference/rff_programs.html">rff_programs()</a></code>, <code><a href="../reference/fit_spatial_rff.html">fit_spatial_rff()</a></code>, <code><a href="../reference/rff_program_test.html">rff_program_test()</a></code>, <code><a href="../reference/rff_transfer_test.html">rff_transfer_test()</a></code> and <code><a href="../reference/rff_lengthscale_profile.html">rff_lengthscale_profile()</a></code> gain a “When to use / limitations” section, and the README a short positioning paragraph. No code changes.</li>
 </ul></div>

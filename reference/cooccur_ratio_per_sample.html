@@ -66,7 +66,7 @@ sample, with cluster dimnames harmonized across samples.</p>
 <span>  patient_key <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  unit <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"image"</span>, <span class="st">"patient"</span><span class="op">)</span>,</span>
 <span>  radius <span class="op">=</span> <span class="fl">30</span>,</span>
-<span>  k <span class="op">=</span> <span class="fl">30</span>,</span>
+<span>  k <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  cluster_levels <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -93,7 +93,10 @@ sample, with cluster dimnames harmonized across samples.</p>
 
 
 <dt id="arg-k">k<a class="anchor" aria-label="anchor" href="#arg-k"></a></dt>
-<dd><p>Maximum number of neighbors to consider.</p></dd>
+<dd><p>Optional cap on the cells returned per cell, counting the cell
+itself. `NULL` (default) uses every cell within `radius`. A number keeps
+only the `k` nearest cells, so the result stops changing with `radius`
+once the cap is reached; a warning reports how many cells reached it.</p></dd>
 
 
 <dt id="arg-cluster-levels">cluster_levels<a class="anchor" aria-label="anchor" href="#arg-cluster-levels"></a></dt>
@@ -103,9 +106,7 @@ sample, with cluster dimnames harmonized across samples.</p>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A data.frame with one row per `sample_id x cluster_i x cluster_j`,
-  columns `ratio`, `count`, `group`, `patient`, `n_cells`, `n_i`, `n_j`.
-  Note that `k` caps the number of neighbours returned per cell; in dense
-  tissue choose `k` large enough that the radius, not `k`, is limiting.</p>
+  columns `ratio`, `count`, `group`, `patient`, `n_cells`, `n_i`, `n_j`.</p>
     </div>
 
     <div class="section level2">
@@ -117,7 +118,7 @@ sample, with cluster dimnames harmonized across samples.</p>
 <span class="r-in"><span>                          seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">rs</span> <span class="op">&lt;-</span> <span class="fu">cooccur_ratio_per_sample</span><span class="op">(</span><span class="va">df</span>, sample_key <span class="op">=</span> <span class="st">"sample_id"</span>,</span></span>
 <span class="r-in"><span>                               group_key <span class="op">=</span> <span class="st">"group"</span>, cluster_key <span class="op">=</span> <span class="st">"cell_type"</span>,</span></span>
-<span class="r-in"><span>                               patient_key <span class="op">=</span> <span class="st">"patient"</span>, radius <span class="op">=</span> <span class="fl">20</span>, k <span class="op">=</span> <span class="fl">30</span><span class="op">)</span></span></span>
+<span class="r-in"><span>                               patient_key <span class="op">=</span> <span class="st">"patient"</span>, radius <span class="op">=</span> <span class="fl">20</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">rs</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   sample_id   cluster_i   cluster_j     ratio count group patient n_cells n_i</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1    case_1 cell_type_1 cell_type_1 0.8010355    38  case  case_1     200  41</span>

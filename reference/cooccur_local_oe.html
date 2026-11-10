@@ -111,7 +111,7 @@ ones, which would give them a negative O/E.</p>
 <span>  <span class="va">cluster_x</span>,</span>
 <span>  <span class="va">cluster_y</span>,</span>
 <span>  radius <span class="op">=</span> <span class="fl">30</span>,</span>
-<span>  neighbors.k <span class="op">=</span> <span class="fl">100</span>,</span>
+<span>  neighbors.k <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  bandwidth <span class="op">=</span> <span class="va">radius</span>,</span>
 <span>  cluster_col <span class="op">=</span> <span class="st">"cell_type"</span>,</span>
 <span>  n_perms <span class="op">=</span> <span class="fl">0</span>,</span>
@@ -138,9 +138,10 @@ are used as cell IDs.</p></dd>
 
 
 <dt id="arg-neighbors-k">neighbors.k<a class="anchor" aria-label="anchor" href="#arg-neighbors-k"></a></dt>
-<dd><p>Maximum number of neighbours returned per cell. Choose
-it so that the radius, not the cap, is limiting (a message reports how
-many cells hit the cap).</p></dd>
+<dd><p>Optional cap on the neighbours used per cell, excluding
+the cell itself. `NULL` (default) uses every cell within `radius`. A
+number truncates dense neighbourhoods to the nearest cells, and a warning
+reports how many cells reached it.</p></dd>
 
 
 <dt id="arg-bandwidth">bandwidth<a class="anchor" aria-label="anchor" href="#arg-bandwidth"></a></dt>

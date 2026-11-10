@@ -107,8 +107,8 @@ jf <- fit_spatial_rff_joint(b, loadings = attr(jt, "loadings")[, 1, drop = FALSE
                             n_iter = 2, lengthscales = 10, max_iter = 30)
 jf$amplitude
 #>              PC1
-#> window1 1.344669
-#> window2 1.278148
-#> window3 1.375177
+#> window1 1.263433
+#> window2 1.277577
+#> window3 1.365825
 # }
 ```

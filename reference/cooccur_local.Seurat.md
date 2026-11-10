@@ -14,7 +14,8 @@ cooccur_local.Seurat(
   sample_key = "sample_id",
   neighbors.k = 20,
   radius = 30,
-  maxnsteps = 15
+  maxnsteps = 15,
+  radius_k = NULL
 )
 ```
 
@@ -46,7 +47,8 @@ cooccur_local.Seurat(
 
 - neighbors.k:
 
-  Number of neighbors to build graph.
+  Number of neighbors of the diffusion graph. It no longer limits the
+  radius search; see \`radius_k\`.
 
 - radius:
 
@@ -57,6 +59,12 @@ cooccur_local.Seurat(
   Maximum number of diffusion steps (each step starts from the previous
   one; early stop on the kurtosis criterion, see \[cooccur_local()\]).
   \`0\` returns the raw indicator.
+
+- radius_k:
+
+  Optional cap on the cells returned per cell by the radius search,
+  counting the cell itself. \`NULL\` (default) uses every cell within
+  \`radius\`.
 
 ## Value
 

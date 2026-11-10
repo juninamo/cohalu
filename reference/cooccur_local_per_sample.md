@@ -19,7 +19,8 @@ cooccur_local_per_sample(
   neighbors.k = 20,
   radius = 30,
   maxnsteps = 1,
-  summarize = c("mean", "q90", "pos_rate", "log2_oe")
+  summarize = c("mean", "q90", "pos_rate", "log2_oe"),
+  radius_k = NULL
 )
 ```
 
@@ -48,7 +49,8 @@ cooccur_local_per_sample(
 
 - neighbors.k:
 
-  Number of neighbors.
+  Number of neighbors of the diffusion graph. It no longer limits the
+  radius search; see \`radius_k\`.
 
 - radius:
 
@@ -73,6 +75,12 @@ cooccur_local_per_sample(
   for cell density and is the recommended summary for group comparison;
   "mean" is unchanged by the (mass-conserving) diffusion and grows with
   abundance.
+
+- radius_k:
+
+  Optional cap on the cells returned per cell by the radius search,
+  counting the cell itself. \`NULL\` (default) uses every cell within
+  \`radius\`.
 
 ## Value
 
@@ -102,12 +110,12 @@ cooccur_local_per_sample(df, sample_key = "sample_id", group_key = "group",
                          patient_key = "patient", neighbors.k = 10,
                          radius = 20)
 #>   sample_id   cluster_i   cluster_j  mean       q90 pos_rate   log2_oe n_cells
-#> 1    case_1 cell_type_1 cell_type_2 0.515 0.8569268    0.920 0.7979486     200
-#> 2    case_2 cell_type_1 cell_type_2 0.490 0.8304980    0.905 0.8257222     200
-#> 3    case_3 cell_type_1 cell_type_2 0.580 0.8319622    0.995 0.5510706     200
-#> 4 control_1 cell_type_1 cell_type_2 0.340 0.6928301    0.915 0.1526131     200
+#> 1    case_1 cell_type_1 cell_type_2 0.515 0.8569268    0.920 0.8242564     200
+#> 2    case_2 cell_type_1 cell_type_2 0.490 0.8304980    0.905 0.8304952     200
+#> 3    case_3 cell_type_1 cell_type_2 0.595 0.8382076    0.995 0.5034124     200
+#> 4 control_1 cell_type_1 cell_type_2 0.345 0.7153114    0.915 0.1183775     200
 #> 5 control_2 cell_type_1 cell_type_2 0.410 0.7322789    0.875 0.3825044     200
-#> 6 control_3 cell_type_1 cell_type_2 0.345 0.7429332    0.860 0.2173352     200
+#> 6 control_3 cell_type_1 cell_type_2 0.345 0.7429332    0.860 0.3201779     200
 #>   n_i n_j   group   patient
 #> 1  41  63    case    case_1
 #> 2  44  48    case    case_2

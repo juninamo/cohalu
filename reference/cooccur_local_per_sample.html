@@ -73,7 +73,8 @@ data.frame suitable for group comparison.</p>
 <span>  neighbors.k <span class="op">=</span> <span class="fl">20</span>,</span>
 <span>  radius <span class="op">=</span> <span class="fl">30</span>,</span>
 <span>  maxnsteps <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>  summarize <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"q90"</span>, <span class="st">"pos_rate"</span>, <span class="st">"log2_oe"</span><span class="op">)</span></span>
+<span>  summarize <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"q90"</span>, <span class="st">"pos_rate"</span>, <span class="st">"log2_oe"</span><span class="op">)</span>,</span>
+<span>  radius_k <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -104,7 +105,8 @@ patient).</p></dd>
 
 
 <dt id="arg-neighbors-k">neighbors.k<a class="anchor" aria-label="anchor" href="#arg-neighbors-k"></a></dt>
-<dd><p>Number of neighbors.</p></dd>
+<dd><p>Number of neighbors of the diffusion graph. It no longer
+limits the radius search; see `radius_k`.</p></dd>
 
 
 <dt id="arg-radius">radius<a class="anchor" aria-label="anchor" href="#arg-radius"></a></dt>
@@ -128,6 +130,12 @@ its expectation under label permutation (see [cooccur_local_oe()]). `log2_oe` is
 abundance of the two cell types and for cell density and is the
 recommended summary for group comparison; "mean" is unchanged by the
 (mass-conserving) diffusion and grows with abundance.</p></dd>
+
+
+<dt id="arg-radius-k">radius_k<a class="anchor" aria-label="anchor" href="#arg-radius-k"></a></dt>
+<dd><p>Optional cap on the cells returned per cell by the radius
+search, counting the cell itself. `NULL` (default) uses every cell within
+`radius`.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -160,12 +168,12 @@ group difference as a change in co-localization.</p>
 <span class="r-in"><span>                         patient_key <span class="op">=</span> <span class="st">"patient"</span>, neighbors.k <span class="op">=</span> <span class="fl">10</span>,</span></span>
 <span class="r-in"><span>                         radius <span class="op">=</span> <span class="fl">20</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   sample_id   cluster_i   cluster_j  mean       q90 pos_rate   log2_oe n_cells</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1    case_1 cell_type_1 cell_type_2 0.515 0.8569268    0.920 0.7979486     200</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2    case_2 cell_type_1 cell_type_2 0.490 0.8304980    0.905 0.8257222     200</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3    case_3 cell_type_1 cell_type_2 0.580 0.8319622    0.995 0.5510706     200</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4 control_1 cell_type_1 cell_type_2 0.340 0.6928301    0.915 0.1526131     200</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1    case_1 cell_type_1 cell_type_2 0.515 0.8569268    0.920 0.8242564     200</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2    case_2 cell_type_1 cell_type_2 0.490 0.8304980    0.905 0.8304952     200</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3    case_3 cell_type_1 cell_type_2 0.595 0.8382076    0.995 0.5034124     200</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4 control_1 cell_type_1 cell_type_2 0.345 0.7153114    0.915 0.1183775     200</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 5 control_2 cell_type_1 cell_type_2 0.410 0.7322789    0.875 0.3825044     200</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6 control_3 cell_type_1 cell_type_2 0.345 0.7429332    0.860 0.2173352     200</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6 control_3 cell_type_1 cell_type_2 0.345 0.7429332    0.860 0.3201779     200</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   n_i n_j   group   patient</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1  41  63    case    case_1</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2  44  48    case    case_2</span>
