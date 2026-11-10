@@ -572,8 +572,8 @@ at the interface of two cluster populations.</p>
 radius-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>
 neighborhood
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mi>r</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>v</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">N_r(v)</annotation></semantics></math>
-(with neighbor cap
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>).
+(all cells within
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>).
 The raw local co-occurrence score is</p>
 <p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>s</mi><mi>v</mi><mrow><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo stretchy="false" form="postfix">)</mo></mrow></msubsup><mspace width="0.278em"></mspace><mo>=</mo><mspace width="0.278em"></mspace><mn>𝟙</mn><mspace width="-0.167em"></mspace><mrow><mo stretchy="true" form="prefix">{</mo><msub><mi>N</mi><mi>r</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>v</mi><mo stretchy="false" form="postfix">)</mo><mo>∩</mo><msub><mi>𝒱</mi><msub><mi>c</mi><mi>x</mi></msub></msub><mo>≠</mo><mi>∅</mi><mspace width="0.278em"></mspace><mo>∧</mo><mspace width="0.278em"></mspace><msub><mi>N</mi><mi>r</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>v</mi><mo stretchy="false" form="postfix">)</mo><mo>∩</mo><msub><mi>𝒱</mi><msub><mi>c</mi><mi>y</mi></msub></msub><mo>≠</mo><mi>∅</mi><mo stretchy="true" form="postfix">}</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
 s_v^{(0)} \;=\; \mathbb{1}\!\left\{
@@ -871,8 +871,8 @@ acting on each other in a tissue.</p>
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi><mo>∈</mo><msup><mi>𝒱</mi><mo>⋆</mo></msup></mrow><annotation encoding="application/x-tex">v \in \mathcal{V}^\star</annotation></semantics></math>
 compute
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mi>r</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>v</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">N_r(v)</annotation></semantics></math>
-via <code><a href="https://jefferislab.github.io/RANN/reference/nn2.html" class="external-link">RANN::nn2</a></code> (radius search, neighbor cap
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>).
+via <code><a href="https://michael.hahsler.net/dbscan/reference/frNN.html" class="external-link">dbscan::frNN</a></code> (all cells within
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>).
 Build an undirected graph
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>G</mi><mo>⋆</mo></msup><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msup><mi>𝒱</mi><mo>⋆</mo></msup><mo>,</mo><msup><mi>E</mi><mo>⋆</mo></msup><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">G^\star = (\mathcal{V}^\star, E^\star)</annotation></semantics></math>
 with</p>

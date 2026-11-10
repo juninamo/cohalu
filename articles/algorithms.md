@@ -339,7 +339,7 @@ interface of two cluster populations.
 
 #### Step 1 — local presence indicator
 
-Take the radius-$`r`$ neighborhood $`N_r(v)`$ (with neighbor cap $`k`$).
+Take the radius-$`r`$ neighborhood $`N_r(v)`$ (all cells within $`r`$).
 The raw local co-occurrence score is
 
 ``` math
@@ -550,8 +550,9 @@ acting on each other in a tissue.
 
 Restrict to a user-provided cell ID list $`\mathcal{V}^\star \subseteq
 \mathcal{V}`$. For each $`v \in \mathcal{V}^\star`$ compute $`N_r(v)`$
-via [`RANN::nn2`](https://jefferislab.github.io/RANN/reference/nn2.html)
-(radius search, neighbor cap $`k`$). Build an undirected graph
+via
+[`dbscan::frNN`](https://michael.hahsler.net/dbscan/reference/frNN.html)
+(all cells within $`r`$). Build an undirected graph
 $`G^\star = (\mathcal{V}^\star, E^\star)`$ with
 
 ``` math
