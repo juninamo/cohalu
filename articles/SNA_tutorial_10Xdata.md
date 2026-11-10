@@ -16,7 +16,7 @@ download it to run the code yourself.
 format(Sys.time(), '%d %B, %Y')
 ```
 
-‘25 September, 2026’
+‘11 November, 2026’
 
 ``` r
 
@@ -78,15 +78,15 @@ rm(data); gc(); gc()
 
 |        | used     | (Mb)  | gc trigger | (Mb)   | limit (Mb) | max used | (Mb)   |
 |--------|----------|-------|------------|--------|------------|----------|--------|
-| Ncells | 12949604 | 691.6 | 19692738   | 1051.8 | NA         | 19692738 | 1051.8 |
-| Vcells | 27252693 | 208.0 | 45754530   | 349.1  | 204800     | 45750535 | 349.1  |
+| Ncells | 13019722 | 695.4 | 19692738   | 1051.8 | NA         | 19692738 | 1051.8 |
+| Vcells | 28026557 | 213.9 | 45754530   | 349.1  | 204800     | 45753940 | 349.1  |
 
 A matrix: 2 × 7 of type dbl {.table .dataframe}
 
 |        | used     | (Mb)  | gc trigger | (Mb)   | limit (Mb) | max used | (Mb)   |
 |--------|----------|-------|------------|--------|------------|----------|--------|
-| Ncells | 12955997 | 692.0 | 19692738   | 1051.8 | NA         | 19692738 | 1051.8 |
-| Vcells | 27266998 | 208.1 | 45754530   | 349.1  | 204800     | 45750535 | 349.1  |
+| Ncells | 13026130 | 695.7 | 19692738   | 1051.8 | NA         | 19692738 | 1051.8 |
+| Vcells | 28040887 | 214.0 | 45754530   | 349.1  | 204800     | 45753940 | 349.1  |
 
 A matrix: 2 × 7 of type dbl {.table .dataframe}
 
@@ -467,7 +467,7 @@ difftime(end_time, start_time, units = "secs")
 ```
 
 ``` output
-Time difference of 3.541155 secs
+Time difference of 0.7946551 secs
 ```
 
 ``` r
@@ -608,7 +608,7 @@ Proliferating_epithelial_cells   Tumor-associated_macrophages
 ```
 
 ``` output
-Time difference of 1.52937 secs
+Time difference of 0.05425191 secs
 ```
 
 ``` output
@@ -616,8 +616,8 @@ Time difference of 1.52937 secs
  Min.   :0.0000000                                      
  1st Qu.:0.0000000                                      
  Median :0.0000773                                      
- Mean   :0.1106833                                      
- 3rd Qu.:0.0646834                                      
+ Mean   :0.1109583                                      
+ 3rd Qu.:0.0653264                                      
  Max.   :1.1785277                                      
 ```
 
@@ -680,7 +680,7 @@ Number of edges: 1340944
 Running Louvain algorithm...
 Maximum modularity in 10 random starts: 0.9585
 Number of communities: 27
-Elapsed time: 6 seconds
+Elapsed time: 4 seconds
 ```
 
 ``` r
@@ -891,7 +891,7 @@ difftime(end_time, start_time, units = "secs")
 ```
 
 ``` output
-Time difference of 12.89734 secs
+Time difference of 2.372481 secs
 ```
 
 ``` r
@@ -964,7 +964,7 @@ summary(cooccur_local_df)
 ```
 
 ``` output
-Time difference of 8.145201 secs
+Time difference of 0.1632559 secs
 ```
 
 ``` output
@@ -972,8 +972,8 @@ Time difference of 8.145201 secs
  Min.   :0.00000          
  1st Qu.:0.00000          
  Median :0.00000          
- Mean   :0.09290          
- 3rd Qu.:0.03948          
+ Mean   :0.09296          
+ 3rd Qu.:0.03989          
  Max.   :1.20254          
 ```
 
@@ -1128,42 +1128,43 @@ loaded via a namespace (and not attached):
 [155] scatterpie_0.2.1              yaml_2.3.8                   
 [157] MatrixGenerics_1.14.0         cli_3.6.2                    
 [159] purrr_1.0.2                   stats4_4.3.2                 
-[161] lifecycle_1.0.4               uwot_0.1.16                  
-[163] Biobase_2.62.0                arrow_17.0.0.1               
-[165] presto_1.0.0                  sessioninfo_1.2.2            
-[167] BiocParallel_1.36.0           gtable_0.3.4                 
-[169] rjson_0.2.23                  ggridges_0.5.5               
-[171] progressr_0.14.0              limma_3.58.1                 
-[173] parallel_4.3.2                ape_5.7-1                    
-[175] jsonlite_2.0.0                RcppHNSW_0.5.0               
-[177] bitops_1.0-7                  bit64_4.0.5                  
-[179] assertthat_0.2.1              brio_1.1.4                   
-[181] Rtsne_0.17                    yulab.utils_0.1.2            
-[183] spatstat.utils_3.1-2          RcppParallel_5.1.7           
-[185] GOSemSim_2.28.0               spatstat.univar_3.1-2        
-[187] R.utils_2.12.3                lazyeval_0.2.2               
-[189] shiny_1.8.0                   htmltools_0.5.7              
-[191] enrichplot_1.22.0             GO.db_3.18.0                 
-[193] sctransform_0.4.1             rappdirs_0.3.3               
-[195] glue_1.6.2                    spam_2.10-0                  
-[197] XVector_0.42.0                RCurl_1.98-1.13              
-[199] rprojroot_2.0.4               treeio_1.26.0                
-[201] gridExtra_2.3                 igraph_1.6.0                 
-[203] TrajectoryUtils_1.10.0        R6_2.5.1                     
-[205] tidyr_1.3.0                   SingleCellExperiment_1.24.0  
-[207] labeling_0.4.3                RcppRoll_0.3.0               
-[209] cluster_2.1.4                 pkgload_1.3.3                
-[211] Rhdf5lib_1.24.1               aplot_0.2.2                  
-[213] GenomeInfoDb_1.38.2           vipor_0.4.7                  
-[215] DelayedArray_0.28.0           tidyselect_1.2.0             
-[217] ggforce_0.4.1                 xml2_1.3.6                   
-[219] AnnotationDbi_1.64.1          future_1.33.1                
-[221] moments_0.14.1                munsell_0.5.0                
-[223] KernSmooth_2.23-22            data.table_1.16.0            
-[225] htmlwidgets_1.6.4             fgsea_1.28.0                 
-[227] RColorBrewer_1.1-3            biomaRt_2.58.2               
-[229] rlang_1.1.2                   spatstat.sparse_3.1-0        
-[231] spatstat.explore_3.3-4        uuid_1.1-1                   
-[233] remotes_2.4.2.1               Cairo_1.6-2                  
-[235] ggnewscale_0.4.9              beeswarm_0.4.0               
+[161] lifecycle_1.0.4               dbscan_1.1-12                
+[163] uwot_0.1.16                   Biobase_2.62.0               
+[165] arrow_17.0.0.1                presto_1.0.0                 
+[167] sessioninfo_1.2.2             BiocParallel_1.36.0          
+[169] gtable_0.3.4                  rjson_0.2.23                 
+[171] ggridges_0.5.5                progressr_0.14.0             
+[173] limma_3.58.1                  parallel_4.3.2               
+[175] ape_5.7-1                     jsonlite_2.0.0               
+[177] RcppHNSW_0.5.0                bitops_1.0-7                 
+[179] bit64_4.0.5                   assertthat_0.2.1             
+[181] brio_1.1.4                    Rtsne_0.17                   
+[183] yulab.utils_0.1.2             spatstat.utils_3.1-2         
+[185] RcppParallel_5.1.7            GOSemSim_2.28.0              
+[187] spatstat.univar_3.1-2         R.utils_2.12.3               
+[189] lazyeval_0.2.2                shiny_1.8.0                  
+[191] htmltools_0.5.7               enrichplot_1.22.0            
+[193] GO.db_3.18.0                  sctransform_0.4.1            
+[195] rappdirs_0.3.3                glue_1.6.2                   
+[197] spam_2.10-0                   XVector_0.42.0               
+[199] RCurl_1.98-1.13               rprojroot_2.0.4              
+[201] treeio_1.26.0                 gridExtra_2.3                
+[203] igraph_1.6.0                  TrajectoryUtils_1.10.0       
+[205] R6_2.5.1                      tidyr_1.3.0                  
+[207] SingleCellExperiment_1.24.0   labeling_0.4.3               
+[209] RcppRoll_0.3.0                cluster_2.1.4                
+[211] pkgload_1.3.3                 Rhdf5lib_1.24.1              
+[213] aplot_0.2.2                   GenomeInfoDb_1.38.2          
+[215] vipor_0.4.7                   DelayedArray_0.28.0          
+[217] tidyselect_1.2.0              ggforce_0.4.1                
+[219] xml2_1.3.6                    AnnotationDbi_1.64.1         
+[221] future_1.33.1                 moments_0.14.1               
+[223] munsell_0.5.0                 KernSmooth_2.23-22           
+[225] data.table_1.16.0             htmlwidgets_1.6.4            
+[227] fgsea_1.28.0                  RColorBrewer_1.1-3           
+[229] biomaRt_2.58.2                rlang_1.1.2                  
+[231] spatstat.sparse_3.1-0         spatstat.explore_3.3-4       
+[233] uuid_1.1-1                    remotes_2.4.2.1              
+[235] Cairo_1.6-2                   ggnewscale_0.4.9             
+[237] beeswarm_0.4.0               
 ```
